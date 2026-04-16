@@ -1,0 +1,467 @@
+:root {
+    --sidebar-width: 240px;
+    --toolbar-height: 56px;
+    --sub-toolbar-height: 44px;
+    --bg-dark: #1e1e2e;
+    --bg-sub: #16161e;
+    --bg-hover: #2e2e3e;
+    --bg-sidebar: #f7f7f9;
+    --border-color: #3e3e4e;
+    --primary-color: #7c6ff7;
+    --text-color: #e0e0e0;
+    --text-dark: #333;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.2);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #fff;
+    color: var(--text-dark);
+    touch-action: none;
+    overscroll-behavior: none;
+}
+
+#app {
+    display: flex;
+    flex-direction: row;
+    width: 100vw;
+    height: 100vh;
+    margin-left: 56px;
+}
+
+/* 左サイドバーツールバー */
+#toolbar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 56px;
+    height: 100vh;
+    padding: 12px 0;
+    background: var(--bg-dark);
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 200;
+    box-sizing: border-box;
+    overflow-y: auto;
+    color: var(--text-color);
+}
+
+#toolbar .logo {
+    display: none;
+}
+
+#toolbar button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #e0e0e0;
+    transition: background 0.15s;
+}
+
+#toolbar button:hover {
+    background: var(--bg-hover);
+}
+
+#toolbar button.active {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.divider {
+    width: 32px;
+    height: 1px;
+    background: var(--border-color);
+    margin: 4px 0;
+}
+
+.tool-group, .toolbar-right-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+#zoom-label {
+    font-size: 13px;
+    margin: 0 8px;
+    min-width: 40px;
+    text-align: center;
+    color: #a5a5b5;
+}
+
+/* ペンツール用サブツールバー（アイコンベース・スライドイン） */
+#sub-toolbar {
+    position: fixed;
+    top: 0;
+    left: 56px;
+    width: 0;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg-dark);
+    z-index: 150;
+    transition: width 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+    box-sizing: border-box;
+}
+
+#sub-toolbar.visible, #shape-sub-toolbar.visible {
+    width: 56px;
+}
+
+#shape-sub-toolbar {
+    position: fixed;
+    top: 0;
+    left: 56px;
+    width: 0;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg-sub);
+    z-index: 150;
+    transition: width 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+    box-sizing: border-box;
+}
+
+/* サブツールバーボタン */
+.sub-btn {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #808090;
+    transition: background 0.15s, color 0.15s;
+}
+
+/* 図形用カラーボタン特有のスタイル */
+.shape-color-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.1s;
+}
+
+.shape-color-btn:hover {
+    transform: scale(1.1);
+}
+
+.shape-color-btn.active {
+    border-color: #fff;
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+}
+
+.sub-btn:hover {
+    background: var(--bg-hover);
+    color: #e0e0e0;
+}
+
+.sub-btn.active {
+    color: var(--primary-color);
+    background: rgba(124, 111, 247, 0.15);
+}
+
+/* カラーボタン */
+.pen-color-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    background-color: var(--c);
+    cursor: pointer;
+    transition: border-color 0.15s;
+    flex-shrink: 0;
+}
+
+.pen-color-btn.active {
+    border-color: #fff;
+    box-shadow: 0 0 0 1px var(--primary-color);
+}
+
+.pen-color-btn:hover {
+    border-color: rgba(255,255,255,0.6);
+}
+
+/* 水平仕切り線 */
+.sub-divider-h {
+    width: 32px;
+    height: 1px;
+    background: var(--border-color);
+    flex-shrink: 0;
+}
+
+/* ワークスペース */
+#workspace {
+    flex-grow: 1;
+    position: relative;
+    overflow: hidden;
+    background-color: #fff;
+}
+
+#main-view {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+#canvas-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    transition: left 0.2s ease, width 0.2s ease;
+}
+
+#canvas-container.sub-open {
+    left: 56px;
+    width: calc(100% - 56px);
+}
+
+/* ツールチップ */
+#sub-tooltip {
+    position: fixed;
+    left: 120px;
+    background: #2a2a3e;
+    color: #e0e0e0;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 9999;
+    display: none;
+}
+
+#graph-edit-view {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 56px;  /* ツールバー幅分ずらす */
+    width: calc(100vw - 56px);
+    height: 100vh;
+    z-index: 100;
+    background: #fff;
+    flex-direction: column;
+}
+
+#graph-edit-header {
+    height: 56px;
+    background-color: #2D2B55;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    flex-shrink: 0;
+    z-index: 2001;
+}
+
+.edit-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+}
+
+#save-graph-btn {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: opacity 0.2s;
+}
+
+#save-graph-btn:hover {
+    opacity: 0.9;
+}
+
+#graph-edit-canvas {
+    flex-grow: 1;
+    background-color: white;
+    width: 100%;
+    height: 100%;
+}
+
+#canvas-container {
+    flex: 1;
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+canvas {
+    display: block;
+    touch-action: none;
+}
+
+/* 数式 */
+.math-block {
+    position: absolute;
+    padding: 8px;
+    cursor: move;
+}
+
+.hidden {
+    display: none !important;
+}
+
+#math-input-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+
+.overlay-content {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 500px;
+}
+
+#math-textarea { width: 100%; height: 120px; padding: 12px; margin-bottom: 20px; }
+.color-presets { display: flex; gap: 8px; }
+.color-preset { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.color-preset.active { border-color: #fff; box-shadow: 0 0 0 1px var(--primary-color); }
+.style-group { display: flex; gap: 4px; }
+.style-group button { width: 32px; height: 32px; border-radius: 6px; border: none; background: transparent; color: #808090; cursor: pointer; }
+.style-group button.active { color: var(--primary-color); background: rgba(124, 111, 247, 0.15); }
+.size-preview { width: 20px; height: 20px; border: 1px solid #444; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
+.size-preview::after { content: ''; display: block; background: #fff; border-radius: 50%; }
+
+.hidden-input {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* 図形ツール用スタイル */
+.shape-group { display: flex; gap: 4px; }
+.shape-group button {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: #808090;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.shape-group button:hover { color: var(--primary-color); }
+.shape-group button.active { color: var(--primary-color); background: rgba(124, 111, 247, 0.15); }
+
+.shape-fill-preset, .shape-stroke-preset {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.shape-fill-preset:hover, .shape-stroke-preset:hover {
+    border-color: #fff;
+}
+
+#shape-no-fill {
+    cursor: pointer;
+    margin-right: 8px;
+}
+
+#shape-options label {
+    display: flex;
+    align-items: center;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+/* Select tool properties panel */
+.props-xy, .props-wh {
+  display: flex;
+  gap: 8px;
+}
+
+.props-xy label, .props-wh label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-color);
+  font-size: 12px;
+}
+
+.props-xy input, .props-wh input {
+  width: 60px;
+  background: #2a2a3e;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-color);
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.delete-btn {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.delete-btn:hover {
+  opacity: 0.85;
+}

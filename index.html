@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MathNote - MVP</title>
+    <!-- KaTeX CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <link rel="stylesheet" href="style.css">
+    <!-- Lucide Icons -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
+    <!-- KaTeX JS -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- プレミアムツールバー (横一列配置) -->
+        <header id="toolbar">
+            <span class="logo">MathNote</span>
+            
+            <div class="tool-group">
+                <button id="tool-select" title="選択 (V)"><i data-lucide="mouse-pointer-2"></i></button>
+                <button id="tool-pen" class="active" title="ペン (P)"><i data-lucide="pencil"></i></button>
+                <button id="tool-shape" title="図形 (S)"><i data-lucide="square"></i></button>
+                <button id="tool-graph" title="グラフ (G)"><i data-lucide="line-chart"></i></button>
+                <button id="tool-text" title="数式 (T)"><i data-lucide="type"></i></button>
+                <button id="tool-eraser" title="消しゴム (E)"><i data-lucide="eraser"></i></button>
+            </div>
+            <div class="divider"></div>
+            <div class="tool-group">
+                <button id="tool-undo" title="元に戻す (Ctrl+Z)"><i data-lucide="undo-2"></i></button>
+                <button id="tool-redo" title="やり直し (Ctrl+Y)"><i data-lucide="redo-2"></i></button>
+            </div>
+            <div class="divider"></div>
+            <div class="tool-group">
+                <button id="tool-palette" title="カラーパレット"><i data-lucide="palette"></i></button>
+                <input type="color" id="pen-color" value="#7c6ff7" class="hidden-input">
+            </div>
+            <div class="divider"></div>
+            <div class="toolbar-right-group">
+                <span id="zoom-label">100%</span>
+                <button id="reset-view" title="表示リセット"><i data-lucide="maximize"></i></button>
+                <button id="tool-settings" title="設定"><i data-lucide="settings"></i></button>
+            </div>
+        </header>
+
+        <!-- ペンツール用サブツールバー（アイコンベース・スライドイン） -->
+        <div id="sub-toolbar">
+            <!-- 線の太さ (3段階) -->
+            <button class="sub-btn pen-size-btn active" data-size="2" title="細">
+                <svg width="20" height="20" viewBox="0 0 20 20"><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+            <button class="sub-btn pen-size-btn" data-size="5" title="中">
+                <svg width="20" height="20" viewBox="0 0 20 20"><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="3"/></svg>
+            </button>
+            <button class="sub-btn pen-size-btn" data-size="10" title="太">
+                <svg width="20" height="20" viewBox="0 0 20 20"><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="6"/></svg>
+            </button>
+
+            <div class="sub-divider-h"></div>
+
+            <!-- カラー (6色 + カスタム) -->
+            <button class="sub-btn pen-color-btn active" data-color="#7c6ff7" style="--c:#7c6ff7" title="紫"></button>
+            <button class="sub-btn pen-color-btn" data-color="#f38ba8" style="--c:#f38ba8" title="赤"></button>
+            <button class="sub-btn pen-color-btn" data-color="#a6e3a1" style="--c:#a6e3a1" title="緑"></button>
+            <button class="sub-btn pen-color-btn" data-color="#89b4fa" style="--c:#89b4fa" title="青"></button>
+            <button class="sub-btn pen-color-btn" data-color="#f9e2af" style="--c:#f9e2af" title="黄"></button>
+            <button class="sub-btn pen-color-btn" data-color="#cdd6f4" style="--c:#cdd6f4" title="グレー"></button>
+            <button class="sub-btn" id="pen-custom-color" title="カスタム">
+                <i data-lucide="palette"></i>
+            </button>
+            <input type="color" id="pen-color" value="#7c6ff7" class="hidden-input">
+
+            <div class="sub-divider-h"></div>
+
+            <!-- 線スタイル -->
+            <button class="sub-btn pen-style-btn active" data-style="solid" title="実線">
+                <svg width="20" height="20" viewBox="0 0 20 20"><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="2"/></svg>
+            </button>
+            <button class="sub-btn pen-style-btn" data-style="dashed" title="破線">
+                <svg width="20" height="20" viewBox="0 0 20 20">
+                    <line x1="1" y1="10" x2="6" y2="10" stroke="currentColor" stroke-width="2"/>
+                    <line x1="8" y1="10" x2="13" y2="10" stroke="currentColor" stroke-width="2"/>
+                    <line x1="15" y1="10" x2="20" y2="10" stroke="currentColor" stroke-width="2"/>
+                </svg>
+            </button>
+            <button class="sub-btn pen-style-btn" data-style="dotted" title="点線">
+                <svg width="20" height="20" viewBox="0 0 20 20">
+                    <circle cx="2" cy="10" r="2" fill="currentColor"/>
+                    <circle cx="9" cy="10" r="2" fill="currentColor"/>
+                    <circle cx="16" cy="10" r="2" fill="currentColor"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- 図形ツール用サブツールバー（アイコンベース・スライドイン） -->
+        <div id="shape-sub-toolbar">
+            <!-- 形状 -->
+            <button class="sub-btn shape-type-btn active" data-type="rect" title="長方形">
+                <i data-lucide="square"></i>
+            </button>
+            <button class="sub-btn shape-type-btn" data-type="circle" title="円・楕円">
+                <i data-lucide="circle"></i>
+            </button>
+            <button class="sub-btn shape-type-btn" data-type="triangle" title="三角形">
+                <i data-lucide="triangle"></i>
+            </button>
+
+            <div class="sub-divider-h"></div>
+
+            <!-- 枠線色 (6色 + カスタム) -->
+            <button class="sub-btn shape-color-btn active" data-color="#7c6ff7" style="background-color:#7c6ff7" title="紫"></button>
+            <button class="sub-btn shape-color-btn" data-color="#f38ba8" style="background-color:#f38ba8" title="赤"></button>
+            <button class="sub-btn shape-color-btn" data-color="#a6e3a1" style="background-color:#a6e3a1" title="緑"></button>
+            <button class="sub-btn shape-color-btn" data-color="#89b4fa" style="background-color:#89b4fa" title="青"></button>
+            <button class="sub-btn shape-color-btn" data-color="#f9e2af" style="background-color:#f9e2af" title="黄"></button>
+            <button class="sub-btn shape-color-btn" data-color="#cdd6f4" style="background-color:#cdd6f4" title="グレー"></button>
+            <button class="sub-btn" id="shape-custom-color" title="カスタム">
+                <i data-lucide="palette"></i>
+            </button>
+            <input type="color" id="shape-stroke-color-input" value="#7c6ff7" class="hidden-input">
+
+            <div class="sub-divider-h"></div>
+
+            <!-- 線の太さ (3段階) -->
+            <button class="sub-btn shape-size-btn" data-size="1" title="細">
+                <svg width="20" height="20" viewBox="0 0 20 20"><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+            <button class="sub-btn shape-size-btn active" data-size="2" title="中">
+                <svg width="20" height="20" viewBox="0 0 20 20"><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="3"/></svg>
+            </button>
+            <button class="sub-btn shape-size-btn" data-size="5" title="太">
+                <svg width="20" height="20" viewBox="0 0 20 20"><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="6"/></svg>
+            </button>
+        </div>
+
+        <!-- ツールチップ -->
+        <div id="sub-tooltip"></div>
+
+        <!-- ワークスペース (ページ切り替えコンテナ) -->
+        <div id="workspace">
+            <div id="main-view">
+                <div id="canvas-container">
+                    <canvas id="canvas"></canvas>
+                </div>
+            </div>
+
+            <div id="graph-edit-view" style="display:none; flex-direction:column; height:100vh;">
+                <!-- グラフ編集ヘッダー -->
+                <header id="graph-edit-header">
+                    <div class="edit-title">
+                        <i data-lucide="line-chart"></i>
+                        <span>グラフ詳細編集中</span>
+                    </div>
+                    <div class="edit-status">
+                        <span id="graph-zoom-label">100%</span>
+                        <button id="save-graph-btn" onclick="exitGraphEditMode()">
+                            <i data-lucide="save"></i> 保存して戻る
+                        </button>
+                    </div>
+                </header>
+                <!-- グラフキャンバス -->
+                <canvas id="graph-edit-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 数式入力用モーダル -->
+    <div id="math-input-overlay" class="hidden">
+        <div class="overlay-content">
+            <textarea id="math-textarea" placeholder="LaTeXを入力..."></textarea>
+            <div class="overlay-actions">
+                <button id="cancel-math">キャンセル</button>
+                <button id="confirm-math">確定</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="graph-edit.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
