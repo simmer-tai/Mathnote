@@ -17,8 +17,20 @@ class MathNote {
 
         // 状態 & データ
         this.tool = 'pen';
-        this.pen = { color: '#7c6ff7', size: 3, style: 'solid' };
-        this.shape = { type: 'rect', fillColor: '#ffffff', strokeColor: '#7c6ff7', lineWidth: 2, noFill: true };
+        this.snapEnabled = false;
+        this.line = {
+            startCap: 'none',
+            endCap: 'arrow-filled',
+            snapAngle: true,
+        };
+        this.lineObjects = [];
+        this.previewLine = null;
+        this.lineStartPos = null;
+        this.selectedLineHandle = null; // 'start' | 'end' | 'body'
+        this.draggingLineId = null;
+        this.dragLineStartSnapshot = null;
+        this.pen = { color: '#2b2b2b', size: 3, style: 'solid' };
+        this.shape = { type: 'rect', fillColor: '#ffffff', strokeColor: '#2b2b2b', lineWidth: 2, noFill: true };
         this.paths = []; this.textBlocks = []; this.graphObjects = []; this.shapeObjects = []; 
         
         // インタラクション状態
@@ -29,6 +41,8 @@ class MathNote {
         this.draggingShapeId = null; this.resizingShapeId = null;
         this.dragOffset = { x: 0, y: 0 };
         this.previewShape = null; this.shapeStartPos = null;
+        this.previewTextBox = null; this.textStartPos = null;
+        this.editingTextId = null; this.pendingMathSize = null;
 
         // Selection tool state
         this.selectedIds = []; // { type: 'shape'|'path'|'graph', id }
@@ -84,9 +98,14 @@ class MathNote {
         ctx.translate(view.offsetX, view.offsetY);
         ctx.scale(view.scale, view.scale);
 
-        for (const p of this.paths) this.drawPath(ctx, p);
+        const vp = this.getViewportBounds();
+        for (const p of this.paths) {
+            if (this.isPathVisible(p, vp)) this.drawPath(ctx, p);
+        }
         if (this.currentPath) this.drawPath(ctx, this.currentPath);
-        for (const s of this.shapeObjects) this.drawShape(ctx, s);
+        for (const s of this.shapeObjects) {
+            if (this.isRectVisible(s.x, s.y, s.width, s.height, vp)) this.drawShape(ctx, s);
+        }
         if (this.previewShape) this.drawShape(ctx, this.previewShape);
         
         // 選択状態の強調表示
@@ -95,7 +114,35 @@ class MathNote {
             if (bounds) this.drawSelectionHandles(ctx, bounds);
         }
 
-        for (const g of this.graphObjects) this.drawGraphObject(ctx, g);
+        for (const g of this.graphObjects) {
+            if (this.isRectVisible(g.x, g.y, g.width, g.height, vp)) this.drawGraphObject(ctx, g);
+        }
+
+        for (const l of this.lineObjects) {
+            if (this.isRectVisible(
+                Math.min(l.x1, l.x2), Math.min(l.y1, l.y2),
+                Math.abs(l.x2 - l.x1), Math.abs(l.y2 - l.y1), vp
+            )) this.drawLineObject(ctx, l);
+        }
+        if (this.previewLine) this.drawLineObject(ctx, this.previewLine);
+
+        // 直線の選択ハンドル
+        if (this.tool === 'select' && this.selectedIds.some(i => i.type === 'line')) {
+            for (const sel of this.selectedIds.filter(i => i.type === 'line')) {
+                const l = this.lineObjects.find(obj => obj.id === sel.id);
+                if (!l) continue;
+                const hr = 6 / this.view.scale;
+                [[l.x1, l.y1], [l.x2, l.y2]].forEach(([x, y]) => {
+                    ctx.beginPath();
+                    ctx.arc(x, y, hr, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(99,102,241,0.9)';
+                    ctx.lineWidth = 1.5 / this.view.scale;
+                    ctx.stroke();
+                });
+            }
+        }
 
         // ラバーバンド描画
         if (this.isRubberBanding) {
@@ -110,6 +157,17 @@ class MathNote {
             ctx.fillRect(rx, ry, rw, rh);
             ctx.strokeRect(rx, ry, rw, rh);
             ctx.setLineDash([]);
+        }
+
+        if (this.previewTextBox) {
+            const b = this.previewTextBox;
+            ctx.strokeStyle = '#7c6ff7';
+            ctx.lineWidth = 1 / view.scale;
+            ctx.setLineDash([6 / view.scale, 4 / view.scale]);
+            ctx.strokeRect(b.x, b.y, b.width, b.height);
+            ctx.setLineDash([]);
+            ctx.fillStyle = 'rgba(124, 111, 247, 0.05)';
+            ctx.fillRect(b.x, b.y, b.width, b.height);
         }
 
         ctx.restore();
@@ -180,7 +238,7 @@ class MathNote {
         for (const stroke of graph.strokes || []) {
             if (stroke.points.length < 2) continue;
             ctx.beginPath();
-            ctx.strokeStyle = stroke.color || '#7c6ff7';
+            ctx.strokeStyle = stroke.color || '#2b2b2b';
             ctx.lineWidth = (stroke.width || 3) / unitS; // ピクセル太さを維持するため unitS で割る
             ctx.lineCap = 'round'; ctx.lineJoin = 'round';
             ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
@@ -299,6 +357,12 @@ class MathNote {
             } else if (item.type === 'graph') {
                 const g = this.graphObjects.find(obj => obj.id === item.id);
                 if (g) bounds = { x: g.x, y: g.y, width: g.width, height: g.height };
+            } else if (item.type === 'line') {
+                const l = this.lineObjects.find(obj => obj.id === item.id);
+                if (l) bounds = {
+                    x: Math.min(l.x1, l.x2), y: Math.min(l.y1, l.y2),
+                    width: Math.abs(l.x2 - l.x1), height: Math.abs(l.y2 - l.y1)
+                };
             }
             
             if (bounds) {
@@ -340,6 +404,14 @@ class MathNote {
                 selected.push({ type: 'graph', id: graph.id });
             }
         }
+        // 直線
+        for (const line of this.lineObjects) {
+            const minX = Math.min(line.x1, line.x2), minY = Math.min(line.y1, line.y2);
+            const maxX = Math.max(line.x1, line.x2), maxY = Math.max(line.y1, line.y2);
+            if (this.rectsOverlap(rect, { x: minX, y: minY, width: maxX - minX, height: maxY - minY })) {
+                selected.push({ type: 'line', id: line.id });
+            }
+        }
         return selected;
     }
 
@@ -369,48 +441,59 @@ class MathNote {
             ctx.stroke();
         });
 
-        // 3. 削除ボタン (左上の外側)
-        const delX = bounds.x - 2 * s;
-        const delY = bounds.y - 2 * s;
-        const iconR = 8 * s;
-        const gx = delX - iconR * 1.5;
-        const gy = delY - iconR * 1.5;
-        const szTrash = iconR * 0.7;
+        // 3. 削除ボタン (左下の外側)
+        const btnSize = 30 * s;
+        const btnR    = 4 * s;
+        const gx = bounds.x - 2 * s;
+        const gy = bounds.y + bounds.height + 2 * s;
 
         ctx.save();
-        ctx.strokeStyle = this.isHoverDelete ? 'rgba(220, 80, 80, 0.9)' : 'rgba(180, 180, 180, 0.9)';
-        ctx.lineWidth = 1.2 * s;
-        ctx.lineCap = 'round';
+
+        // 背景: 角丸四角 (#fa2f2f / ホバー時は少し暗く)
+        ctx.beginPath();
+        ctx.roundRect(gx - btnSize / 2, gy, btnSize, btnSize, btnR);
+        ctx.fillStyle = this.isHoverDelete ? '#d42020' : '#fa2f2f';
+        ctx.fill();
+
+        // ゴミ箱アイコン (白・中央揃え)
+        const cx  = gx;
+        const cy  = gy + btnSize / 2;
+        const sz  = btnSize * 0.28;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth   = 1.5 * s;
+        ctx.lineCap     = 'round';
+        ctx.lineJoin    = 'round';
 
         // フタ
         ctx.beginPath();
-        ctx.moveTo(gx - szTrash, gy - szTrash * 0.3);
-        ctx.lineTo(gx + szTrash, gy - szTrash * 0.3);
+        ctx.moveTo(cx - sz,        cy - sz * 0.35);
+        ctx.lineTo(cx + sz,        cy - sz * 0.35);
         ctx.stroke();
 
         // 取っ手
         ctx.beginPath();
-        ctx.moveTo(gx - szTrash * 0.3, gy - szTrash * 0.3);
-        ctx.lineTo(gx - szTrash * 0.3, gy - szTrash * 0.8);
-        ctx.lineTo(gx + szTrash * 0.3, gy - szTrash * 0.8);
-        ctx.lineTo(gx + szTrash * 0.3, gy - szTrash * 0.3);
+        ctx.moveTo(cx - sz * 0.3,  cy - sz * 0.35);
+        ctx.lineTo(cx - sz * 0.3,  cy - sz * 0.85);
+        ctx.lineTo(cx + sz * 0.3,  cy - sz * 0.85);
+        ctx.lineTo(cx + sz * 0.3,  cy - sz * 0.35);
         ctx.stroke();
 
         // 本体
         ctx.beginPath();
-        ctx.roundRect(gx - szTrash * 0.8, gy - szTrash * 0.1, szTrash * 1.6, szTrash * 1.4, 1 * s);
+        ctx.roundRect(cx - sz * 0.75, cy - sz * 0.15, sz * 1.5, sz * 1.3, 1 * s);
         ctx.stroke();
 
         // 縦線2本
-        [-szTrash * 0.3, szTrash * 0.3].forEach(offset => {
+        [-sz * 0.3, sz * 0.3].forEach(offset => {
             ctx.beginPath();
-            ctx.moveTo(gx + offset, gy + szTrash * 0.2);
-            ctx.lineTo(gx + offset, gy + szTrash * 0.9);
+            ctx.moveTo(cx + offset, cy + sz * 0.1);
+            ctx.lineTo(cx + offset, cy + sz * 0.8);
             ctx.stroke();
         });
+
         ctx.restore();
 
-        this.deleteIconBounds = { x: gx, y: gy, r: iconR * 1.5 };
+        this.deleteIconBounds = { x: gx, y: gy + btnSize / 2, r: btnSize / 2 };
 
         // 4. 形状編集ツールバー (上部中央・コンパクト)
         const onlyShapes = this.selectedIds.length > 0 && this.selectedIds.every(sel => sel.type === 'shape');
@@ -429,7 +512,7 @@ class MathNote {
             ctx.fillStyle = 'rgba(20, 20, 30, 0.85)';
             ctx.fill();
 
-            const colors = ['#7c6ff7', '#f38ba8', '#a6e3a1', '#89b4fa', '#f9e2af', '#cdd6f4'];
+            const colors = ['#2b2b2b', '#f38ba8', '#a6e3a1', '#89b4fa', '#f9e2af', '#cdd6f4'];
             this.colorSwatchBounds = [];
             colors.forEach((c, i) => {
                 const sx = tbX + tbPad + i * swGap + swR;
@@ -621,7 +704,8 @@ class MathNote {
 
     // --- インタラクション ---
     handlePointerDown(pos, e) {
-        if (e.button === 1 || (e.button === 0 && e.altKey)) { this.isPanning = true; this.lastMousePos = { x: e.clientX, y: e.clientY }; return; }
+        const isTouch = e.touches !== undefined;
+        if (!isTouch && (e.button === 1 || (e.button === 0 && e.altKey))) { this.isPanning = true; this.lastMousePos = { x: e.clientX, y: e.clientY }; return; }
 
         // Select tool logic
         if (this.tool === 'select') {
@@ -647,27 +731,29 @@ class MathNote {
                 }
             }
 
-            // 2. Check handles (if single selection)
-            if (this.selectedIds.length === 1) {
-                const item = this.selectedIds[0];
-                let rect = null;
-                if (item.type === 'shape') {
-                    const s = this.shapeObjects.find(obj => obj.id === item.id);
-                    if (s) rect = { x: s.x, y: s.y, width: s.width, height: s.height };
-                } else if (item.type === 'path') {
-                    const p = this.paths[item.id];
-                    if (p) rect = this.getPathBounds(p);
-                } else if (item.type === 'graph') {
-                    const g = this.graphObjects.find(obj => obj.id === item.id);
-                    if (g) rect = { x: g.x, y: g.y, width: g.width, height: g.height };
-                }
-
-                if (rect) {
-                    const h = this.getHandleAt(rect, pos);
+            // 2. Check handles
+            if (this.selectedIds.length > 0) {
+                const combinedRect = this.getCombinedBounds(this.selectedIds);
+                if (combinedRect) {
+                    const h = this.getHandleAt(combinedRect, pos);
                     if (h) {
                         this.resizingHandle = h;
-                        this.resizeStartShape = { ...rect };
+                        // 各オブジェクトの現在位置・サイズのスナップショットを保存
+                        this.resizeStartShape = { ...combinedRect };
                         this.resizeStartPos = { ...pos };
+                        this.resizeStartObjects = this.selectedIds.map(item => {
+                            if (item.type === 'shape') {
+                                const s = this.shapeObjects.find(obj => obj.id === item.id);
+                                return s ? { ...item, snapshot: { x: s.x, y: s.y, width: s.width, height: s.height } } : item;
+                            } else if (item.type === 'path') {
+                                const p = this.paths[item.id];
+                                return p ? { ...item, snapshot: { points: p.points.map(pt => ({ ...pt })) } } : item;
+                            } else if (item.type === 'graph') {
+                                const g = this.graphObjects.find(obj => obj.id === item.id);
+                                return g ? { ...item, snapshot: { x: g.x, y: g.y, width: g.width, height: g.height } } : item;
+                            }
+                            return item;
+                        });
                         return;
                     }
                 }
@@ -679,8 +765,23 @@ class MathNote {
             if (combinedBounds && pos.x >= combinedBounds.x && pos.x <= combinedBounds.x + combinedBounds.width &&
                 pos.y >= combinedBounds.y && pos.y <= combinedBounds.y + combinedBounds.height) {
                 this.isDrawing = false; // ドラッグ開始
-                this.dragOffset = { x: pos.x, y: pos.y };
                 this.isDraggingSelection = true;
+                this.dragOffset = { x: pos.x, y: pos.y };
+                this.dragStartPos = { x: pos.x, y: pos.y };
+                this.dragStartBounds = combinedBounds;
+                this.dragStartObjects = this.selectedIds.map(item => {
+                    if (item.type === 'shape') {
+                        const s = this.shapeObjects.find(obj => obj.id === item.id);
+                        return s ? { ...item, snapshot: { x: s.x, y: s.y } } : item;
+                    } else if (item.type === 'path') {
+                        const p = this.paths[item.id];
+                        return p ? { ...item, snapshot: { points: p.points.map(pt => ({ ...pt })) } } : item;
+                    } else if (item.type === 'graph') {
+                        const g = this.graphObjects.find(obj => obj.id === item.id);
+                        return g ? { ...item, snapshot: { x: g.x, y: g.y } } : item;
+                    }
+                    return item;
+                });
                 return;
             }
 
@@ -692,6 +793,9 @@ class MathNote {
                     this.selectedIds = [{ type: 'shape', id: s.id }];
                     this.isDraggingSelection = true;
                     this.dragOffset = { x: pos.x, y: pos.y };
+                    this.dragStartPos = { x: pos.x, y: pos.y };
+                    this.dragStartBounds = { x: s.x, y: s.y, width: s.width, height: s.height };
+                    this.dragStartObjects = this.selectedIds.map(item => ({ ...item, snapshot: { x: s.x, y: s.y } }));
                     this.updatePropertiesPanel();
                     this.draw();
                     return;
@@ -703,6 +807,9 @@ class MathNote {
                     this.selectedIds = [{ type: 'path', id: i }];
                     this.isDraggingSelection = true;
                     this.dragOffset = { x: pos.x, y: pos.y };
+                    this.dragStartPos = { x: pos.x, y: pos.y };
+                    this.dragStartBounds = this.getPathBounds(this.paths[i]);
+                    this.dragStartObjects = this.selectedIds.map(item => ({ ...item, snapshot: { points: this.paths[i].points.map(pt => ({ ...pt })) } }));
                     this.updatePropertiesPanel();
                     this.draw();
                     return;
@@ -715,6 +822,9 @@ class MathNote {
                     this.selectedIds = [{ type: 'graph', id: g.id }];
                     this.isDraggingSelection = true;
                     this.dragOffset = { x: pos.x, y: pos.y };
+                    this.dragStartPos = { x: pos.x, y: pos.y };
+                    this.dragStartBounds = { x: g.x, y: g.y, width: g.width, height: g.height };
+                    this.dragStartObjects = this.selectedIds.map(item => ({ ...item, snapshot: { x: g.x, y: g.y } }));
                     this.updatePropertiesPanel();
                     this.draw();
                     return;
@@ -731,37 +841,144 @@ class MathNote {
             return;
         }
 
-        // シェイプオブジェクト の判定
-        for (let i = this.shapeObjects.length-1; i >= 0; i--) {
-            const s = this.shapeObjects[i];
-            if (pos.x >= s.x && pos.x <= s.x + s.width && pos.y >= s.y && pos.y <= s.y + s.height) {
-                if (pos.x > s.x + s.width - 15 && pos.y > s.y + s.height - 15) this.resizingShapeId = s.id;
-                else { this.draggingShapeId = s.id; this.dragOffset = { x: pos.x - s.x, y: pos.y - s.y }; }
-                this.draw();
-                return;
+        // シェイプオブジェクト の判定 (ペンツール・消しゴム以外)
+        if (this.tool !== 'pen' && this.tool !== 'eraser') {
+            for (let i = this.shapeObjects.length-1; i >= 0; i--) {
+                const s = this.shapeObjects[i];
+                if (pos.x >= s.x && pos.x <= s.x + s.width && pos.y >= s.y && pos.y <= s.y + s.height) {
+                    if (pos.x > s.x + s.width - 15 && pos.y > s.y + s.height - 15) this.resizingShapeId = s.id;
+                    else { this.draggingShapeId = s.id; this.dragOffset = { x: pos.x - s.x, y: pos.y - s.y }; }
+                    this.draw();
+                    return;
+                }
             }
-        }
 
-        // グラフオブジェクト の判定
-        for (let i = this.graphObjects.length-1; i >= 0; i--) {
-            const g = this.graphObjects[i];
-            if (pos.x >= g.x && pos.x <= g.x + g.width && pos.y >= g.y && pos.y <= g.y + g.height) {
-                if (pos.x > g.x + g.width - 15 && pos.y > g.y + g.height - 15) this.resizingGraphId = g.id;
-                else { this.draggingGraphId = g.id; this.dragOffset = { x: pos.x - g.x, y: pos.y - g.y }; }
-                this.draw();
-                return;
+            // グラフオブジェクト の判定
+            for (let i = this.graphObjects.length-1; i >= 0; i--) {
+                const g = this.graphObjects[i];
+                if (pos.x >= g.x && pos.x <= g.x + g.width && pos.y >= g.y && pos.y <= g.y + g.height) {
+                    if (pos.x > g.x + g.width - 15 && pos.y > g.y + g.height - 15) this.resizingGraphId = g.id;
+                    else { this.draggingGraphId = g.id; this.dragOffset = { x: pos.x - g.x, y: pos.y - g.y }; }
+                    this.draw();
+                    return;
+                }
             }
         }
 
         if (this.tool === 'graph') this.addGraph(pos);
         else if (this.tool === 'shape') { this.saveHistory(); this.shapeStartPos = pos; this.previewShape = null; this.isDrawing = true; }
-        else if (this.tool === 'pen') { this.saveHistory(); this.isDrawing = true; this.currentPath = { color: this.pen.color, size: this.pen.size / this.view.scale, style: this.pen.style, points: [pos] }; this.draw(); }
+        else if (this.tool === 'pen') { this.saveHistory(); this.isDrawing = true; this.currentPath = { color: this.pen.color, size: this.pen.size, style: this.pen.style, points: [pos] }; this.draw(); }
         else if (this.tool === 'eraser') { this.saveHistory(); this.eraseAt(pos); this.isDrawing = true; this.draw(); }
-        else if (this.tool === 'text') this.showMathDialog(pos);
+        else if (this.tool === 'line') {
+            // 選択中の直線ハンドルのヒットテスト
+            for (const sel of this.selectedIds.filter(i => i.type === 'line')) {
+                const l = this.lineObjects.find(obj => obj.id === sel.id);
+                if (!l) continue;
+                const hr = 10 / this.view.scale;
+                if (Math.hypot(pos.x - l.x1, pos.y - l.y1) < hr) {
+                    this.selectedLineHandle = { id: l.id, point: 'start' };
+                    return;
+                }
+                if (Math.hypot(pos.x - l.x2, pos.y - l.y2) < hr) {
+                    this.selectedLineHandle = { id: l.id, point: 'end' };
+                    return;
+                }
+                // 線全体のドラッグ
+                const d = this.distToSegment(pos, { x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 });
+                if (d < 8 / this.view.scale) {
+                    this.selectedLineHandle = { id: l.id, point: 'body' };
+                    this.dragOffset = { x: pos.x, y: pos.y };
+                    this.dragLineStartSnapshot = { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 };
+                    return;
+                }
+            }
+            // 新規直線の描画開始
+            this.saveHistory();
+            this.isDrawing = true;
+            this.lineStartPos = pos;
+            this.previewLine = null;
+            this.selectedIds = [];
+        }
+        else if (this.tool === 'text') {
+            // 既存テキストボックスのシングルタップで編集
+            for (let i = this.textBlocks.length - 1; i >= 0; i--) {
+                const b = this.textBlocks[i];
+                const el = document.getElementById(`block-${b.id}`);
+                if (!el) continue;
+                const w = el.offsetWidth / this.view.scale;
+                const h = el.offsetHeight / this.view.scale;
+                if (pos.x >= b.x && pos.x <= b.x + w && pos.y >= b.y && pos.y <= b.y + h) {
+                    this.pendingMathPos = { x: b.x, y: b.y };
+                    this.pendingMathSize = { width: b.width || w, height: b.height || h };
+                    this.editingTextId = b.id;
+                    document.getElementById('math-textarea').value = b.content;
+                    document.getElementById('math-input-overlay').classList.remove('hidden');
+                    document.getElementById('math-textarea').focus();
+                    return;
+                }
+            }
+            // 新規テキストボックスのドラッグ開始
+            this.isDrawing = true;
+            this.textStartPos = pos;
+            this.previewTextBox = null;
+        }
     }
 
     handlePointerMove(pos, e) {
         if (this.isPanning) { this.view.offsetX += (e.clientX - this.lastMousePos.x); this.view.offsetY += (e.clientY - this.lastMousePos.y); this.lastMousePos = { x: e.clientX, y: e.clientY }; this.draw(); return; }
+
+        if (this.tool === 'line') {
+            // ハンドルドラッグ
+            if (this.selectedLineHandle) {
+                const l = this.lineObjects.find(obj => obj.id === this.selectedLineHandle.id);
+                if (l) {
+                    if (this.selectedLineHandle.point === 'start') {
+                        const snapped = this.line.snapAngle ? this.snapAngle45({ x: l.x2, y: l.y2 }, pos) : pos;
+                        l.x1 = snapped.x; l.y1 = snapped.y;
+                    } else if (this.selectedLineHandle.point === 'end') {
+                        const snapped = this.line.snapAngle ? this.snapAngle45({ x: l.x1, y: l.y1 }, pos) : pos;
+                        l.x2 = snapped.x; l.y2 = snapped.y;
+                    } else if (this.selectedLineHandle.point === 'body') {
+                        const dx = pos.x - this.dragOffset.x;
+                        const dy = pos.y - this.dragOffset.y;
+                        this.dragOffset = { x: pos.x, y: pos.y };
+                        l.x1 += dx; l.y1 += dy; l.x2 += dx; l.y2 += dy;
+                    }
+                    this.draw();
+                }
+                return;
+            }
+            // プレビュー描画
+            if (this.isDrawing && this.lineStartPos) {
+                let endPos = pos;
+                if (this.line.snapAngle) endPos = this.snapAngle45(this.lineStartPos, pos);
+                this.previewLine = {
+                    id: -1,
+                    x1: this.lineStartPos.x, y1: this.lineStartPos.y,
+                    x2: endPos.x, y2: endPos.y,
+                    color: this.pen.color,
+                    size: this.pen.size,
+                    style: this.pen.style,
+                    startCap: this.line.startCap,
+                    endCap: this.line.endCap,
+                };
+                this.draw();
+                return;
+            }
+        }
+
+        if (this.tool === 'text' && this.isDrawing && this.textStartPos) {
+            const w = pos.x - this.textStartPos.x;
+            const h = pos.y - this.textStartPos.y;
+            this.previewTextBox = {
+                x: w < 0 ? pos.x : this.textStartPos.x,
+                y: h < 0 ? pos.y : this.textStartPos.y,
+                width: Math.abs(w),
+                height: Math.abs(h),
+            };
+            this.draw();
+            return;
+        }
 
         // Hover Detection for Selection Context UI
         if (this.tool === 'select' && this.deleteIconBounds) {
@@ -784,29 +1001,42 @@ class MathNote {
         }
 
         // Resize
-        if (this.resizingHandle && this.selectedIds.length === 1) {
-            const item = this.selectedIds[0];
-            const { x, y, width, height } = this.applyResize(this.resizingHandle, this.resizeStartShape, this.resizeStartPos, pos);
-            
-            if (item.type === 'shape') {
-                const s = this.shapeObjects.find(obj => obj.id === item.id);
-                if (s) { s.x = x; s.y = y; s.width = width; s.height = height; }
-            } else if (item.type === 'path') {
-                const p = this.paths[item.id];
-                if (p) {
-                    const bounds = this.getPathBounds(p);
-                    const dx = x - bounds.x;
-                    const dy = y - bounds.y;
-                    const scaleX = width / bounds.width;
-                    const scaleY = height / bounds.height;
-                    p.points = p.points.map(pt => ({
-                        x: x + (pt.x - bounds.x) * scaleX,
-                        y: y + (pt.y - bounds.y) * scaleY
-                    }));
+        if (this.resizingHandle && this.selectedIds.length > 0 && this.resizeStartObjects) {
+            const snappedPos = this.snapEnabled
+                ? this.snapHandlePos(pos, this.resizingHandle.id)
+                : pos;
+            const { x, y, width, height } = this.applyResize(this.resizingHandle, this.resizeStartShape, this.resizeStartPos, snappedPos);
+            const oldBounds = this.resizeStartShape;
+
+            for (const item of this.resizeStartObjects) {
+                if (!item.snapshot) continue;
+                if (item.type === 'shape') {
+                    const s = this.shapeObjects.find(obj => obj.id === item.id);
+                    if (s) {
+                        const snap = item.snapshot;
+                        s.x = x + ((snap.x - oldBounds.x) / oldBounds.width) * width;
+                        s.y = y + ((snap.y - oldBounds.y) / oldBounds.height) * height;
+                        s.width = (snap.width / oldBounds.width) * width;
+                        s.height = (snap.height / oldBounds.height) * height;
+                    }
+                } else if (item.type === 'path') {
+                    const p = this.paths[item.id];
+                    if (p) {
+                        p.points = item.snapshot.points.map(pt => ({
+                            x: x + ((pt.x - oldBounds.x) / oldBounds.width) * width,
+                            y: y + ((pt.y - oldBounds.y) / oldBounds.height) * height
+                        }));
+                    }
+                } else if (item.type === 'graph') {
+                    const g = this.graphObjects.find(obj => obj.id === item.id);
+                    if (g) {
+                        const snap = item.snapshot;
+                        g.x = x + ((snap.x - oldBounds.x) / oldBounds.width) * width;
+                        g.y = y + ((snap.y - oldBounds.y) / oldBounds.height) * height;
+                        g.width = (snap.width / oldBounds.width) * width;
+                        g.height = (snap.height / oldBounds.height) * height;
+                    }
                 }
-            } else if (item.type === 'graph') {
-                const g = this.graphObjects.find(obj => obj.id === item.id);
-                if (g) { g.x = x; g.y = y; g.width = width; g.height = height; }
             }
             this.updatePropertiesPanel();
             this.draw();
@@ -815,22 +1045,29 @@ class MathNote {
 
         // Drag Selection
         if (this.isDraggingSelection) {
-            const dx = pos.x - this.dragOffset.x;
-            const dy = pos.y - this.dragOffset.y;
-            this.dragOffset = { ...pos };
+            const totalDx = pos.x - this.dragStartPos.x;
+            const totalDy = pos.y - this.dragStartPos.y;
 
-            for (const item of this.selectedIds) {
+            let finalDx = totalDx, finalDy = totalDy;
+            if (this.snapEnabled && this.dragStartBounds) {
+                const snapped = this.snapBoundsMove(this.dragStartBounds, totalDx, totalDy);
+                finalDx = snapped.dx;
+                finalDy = snapped.dy;
+            }
+
+            for (const item of this.dragStartObjects || this.selectedIds) {
+                if (!item.snapshot) continue;
                 if (item.type === 'shape') {
                     const s = this.shapeObjects.find(obj => obj.id === item.id);
-                    if (s) { s.x += dx; s.y += dy; }
+                    if (s) { s.x = item.snapshot.x + finalDx; s.y = item.snapshot.y + finalDy; }
                 } else if (item.type === 'path') {
                     const p = this.paths[item.id];
                     if (p) {
-                        p.points = p.points.map(pt => ({ x: pt.x + dx, y: pt.y + dy }));
+                        p.points = item.snapshot.points.map(pt => ({ x: pt.x + finalDx, y: pt.y + finalDy }));
                     }
                 } else if (item.type === 'graph') {
                     const g = this.graphObjects.find(obj => obj.id === item.id);
-                    if (g) { g.x += dx; g.y += dy; }
+                    if (g) { g.x = item.snapshot.x + finalDx; g.y = item.snapshot.y + finalDy; }
                 }
             }
             this.draw();
@@ -884,6 +1121,40 @@ class MathNote {
     }
 
     handlePointerUp() {
+        if (this.tool === 'line') {
+            if (this.selectedLineHandle) {
+                this.selectedLineHandle = null;
+                this.dragLineStartSnapshot = null;
+                this.saveCurrentNote();
+                this.draw();
+                return;
+            }
+            if (this.isDrawing && this.lineStartPos) {
+                let endPos = { x: 0, y: 0 };
+                if (this.previewLine) {
+                    endPos = { x: this.previewLine.x2, y: this.previewLine.y2 };
+                }
+                const dist = Math.hypot(endPos.x - this.lineStartPos.x, endPos.y - this.lineStartPos.y);
+                if (dist > 5) {
+                    const newLine = {
+                        id: Date.now(),
+                        x1: this.lineStartPos.x, y1: this.lineStartPos.y,
+                        x2: endPos.x, y2: endPos.y,
+                        color: this.pen.color,
+                        size: this.pen.size,
+                        style: this.pen.style,
+                        startCap: this.line.startCap,
+                        endCap: this.line.endCap,
+                    };
+                    this.lineObjects.push(newLine);
+                    this.selectedIds = [{ type: 'line', id: newLine.id }];
+                    this.saveCurrentNote();
+                }
+                this.lineStartPos = null;
+                this.previewLine = null;
+            }
+        }
+
         if (this.isRubberBanding) {
             const rect = {
                 x: Math.min(this.rubberStart.x, this.rubberEnd.x),
@@ -903,11 +1174,27 @@ class MathNote {
         }
 
         if (this.resizingHandle) {
-            this.resizingHandle = null; this.resizeStartShape = null; this.resizeStartPos = null;
+            this.resizingHandle = null; this.resizeStartShape = null; this.resizeStartPos = null; this.resizeStartObjects = null;
+        }
+
+        if (this.tool === 'text' && this.isDrawing && this.textStartPos) {
+            const box = this.previewTextBox;
+            if (box && box.width > 10 && box.height > 10) {
+                this.pendingMathPos = { x: box.x, y: box.y };
+                this.pendingMathSize = { width: box.width, height: box.height };
+                this.editingTextId = null;
+                document.getElementById('math-textarea').value = '';
+                document.getElementById('math-input-overlay').classList.remove('hidden');
+                document.getElementById('math-textarea').focus();
+            }
+            this.textStartPos = null;
+            this.previewTextBox = null;
         }
 
         this.isDrawing = false; this.currentPath = null; this.previewShape = null; this.shapeStartPos = null;
+        this.previewTextBox = null; this.textStartPos = null;
         this.isPanning = false; this.isDraggingSelection = false;
+        this.dragStartPos = null; this.dragStartBounds = null; this.dragStartObjects = null;
         this.draggingGraphId = null; this.resizingGraphId = null;
         this.draggingShapeId = null; this.resizingShapeId = null;
 
@@ -959,6 +1246,7 @@ class MathNote {
         document.getElementById('tool-graph').onclick = () => this.setTool('graph');
         document.getElementById('tool-text').onclick = () => this.setTool('text');
         document.getElementById('tool-eraser').onclick = () => this.setTool('eraser');
+        document.getElementById('tool-line').onclick = () => this.setTool('line');
         document.getElementById('tool-undo').onclick = () => this.undo();
         document.getElementById('tool-redo').onclick = () => this.redo();
         document.getElementById('reset-view').onclick = () => this.resetView();
@@ -1037,6 +1325,27 @@ class MathNote {
             });
         });
 
+        document.getElementById('line-snap-btn').addEventListener('click', () => {
+            this.line.snapAngle = !this.line.snapAngle;
+            document.getElementById('line-snap-btn').classList.toggle('active', this.line.snapAngle);
+        });
+
+        document.querySelectorAll('.line-start-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.line.startCap = btn.dataset.cap;
+                document.querySelectorAll('.line-start-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        document.querySelectorAll('.line-end-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.line.endCap = btn.dataset.cap;
+                document.querySelectorAll('.line-end-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -1044,6 +1353,12 @@ class MathNote {
 
             // Tool selection shortcut
             if (e.key === 'v' || e.key === 'V') { this.setTool('select'); }
+            if (e.key === 'l' || e.key === 'L') { this.setTool('line'); }
+            if (e.key === 'p' || e.key === 'P') { this.setTool('pen'); }
+            if (e.key === 's' || e.key === 'S') { if (!e.shiftKey) this.setTool('shape'); }
+            if (e.key === 'g' || e.key === 'G') { this.setTool('graph'); }
+            if (e.key === 't' || e.key === 'T') { this.setTool('text'); }
+            if (e.key === 'e' || e.key === 'E') { this.setTool('eraser'); }
 
             if (this.tool === 'select') {
                 if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -1087,6 +1402,11 @@ class MathNote {
             // Existing undo/redo shortcuts
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); this.undo(); }
             if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); this.redo(); }
+        });
+
+        document.getElementById('tool-snap').addEventListener('click', () => {
+            this.snapEnabled = !this.snapEnabled;
+            document.getElementById('tool-snap').classList.toggle('active', this.snapEnabled);
         });
     }
 
@@ -1143,10 +1463,13 @@ class MathNote {
         const canvasContainer = document.getElementById('canvas-container');
         const isPen = this.tool === 'pen';
         const isShape = this.tool === 'shape';
+        const isLine = this.tool === 'line';
+        const lineSubToolbar = document.getElementById('line-sub-toolbar');
 
         subToolbar.classList.toggle('visible', isPen);
         shapeSubToolbar.classList.toggle('visible', isShape);
-        canvasContainer.classList.toggle('sub-open', isPen || isShape);
+        lineSubToolbar.classList.toggle('visible', isLine);
+        canvasContainer.classList.toggle('sub-open', isPen || isShape || isLine);
 
         const selectProps = document.getElementById('select-properties');
         if (this.tool !== 'select') {
@@ -1176,7 +1499,12 @@ class MathNote {
         this.draw();
     }
 
-    updatePenColor(c) { this.pen.color = c; document.querySelectorAll('.color-preset').forEach(b => b.classList.toggle('active', b.dataset.color === c)); }
+    updatePenColor(c) { 
+        this.pen.color = c; 
+        const cp = document.getElementById('pen-color');
+        if (cp) cp.value = c;
+        document.querySelectorAll('.pen-color-btn').forEach(b => b.classList.toggle('active', b.dataset.color === c)); 
+    }
     undo() { if (this.history.length > 0) { this.redoStack.push(JSON.stringify(this.paths)); this.paths = JSON.parse(this.history.pop()); this.saveCurrentNote(); this.draw(); } }
     redo() { if (this.redoStack.length > 0) { this.history.push(JSON.stringify(this.paths)); this.paths = JSON.parse(this.redoStack.pop()); this.saveCurrentNote(); this.draw(); } }
     saveHistory() { this.history.push(JSON.stringify(this.paths)); if (this.history.length > 50) this.history.shift(); this.redoStack = []; }
@@ -1188,20 +1516,218 @@ class MathNote {
         return Math.hypot(p.x-(v.x+t*(w.x-v.x)), p.y-(v.y+t*(w.y-v.y))); 
     }
 
+    snapAngle45(start, end) {
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const angle = Math.atan2(dy, dx);
+        const snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+        const dist = Math.hypot(dx, dy);
+        return {
+            x: start.x + dist * Math.cos(snapped),
+            y: start.y + dist * Math.sin(snapped),
+        };
+    }
+
+    drawLineCap(ctx, x, y, angle, cap, size) {
+        if (cap === 'none') return;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        const s = size * 3;
+        if (cap === 'arrow-filled') {
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-s, -s * 0.4);
+            ctx.lineTo(-s,  s * 0.4);
+            ctx.closePath();
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.fill();
+        } else if (cap === 'arrow-open') {
+            ctx.beginPath();
+            ctx.moveTo(-s, -s * 0.4);
+            ctx.lineTo(0, 0);
+            ctx.lineTo(-s,  s * 0.4);
+            ctx.stroke();
+        } else if (cap === 'circle-filled') {
+            ctx.beginPath();
+            ctx.arc(-s * 0.5, 0, s * 0.4, 0, Math.PI * 2);
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.fill();
+        } else if (cap === 'circle-open') {
+            ctx.beginPath();
+            ctx.arc(-s * 0.5, 0, s * 0.4, 0, Math.PI * 2);
+            ctx.fillStyle = 'white';
+            ctx.fill();
+            ctx.stroke();
+        } else if (cap === 'triangle') {
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-s, -s * 0.5);
+            ctx.lineTo(-s,  s * 0.5);
+            ctx.closePath();
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    drawLineObject(ctx, line) {
+        const { x1, y1, x2, y2, color, size, style, startCap, endCap } = line;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = size;
+        ctx.lineCap = 'round';
+        if (style === 'dashed') ctx.setLineDash([12 / this.view.scale, 12 / this.view.scale]);
+        else if (style === 'dotted') ctx.setLineDash([2 / this.view.scale, 8 / this.view.scale]);
+        else ctx.setLineDash([]);
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const angleStart = Math.atan2(y1 - y2, x1 - x2);
+        const angleEnd   = Math.atan2(y2 - y1, x2 - x1);
+        this.drawLineCap(ctx, x1, y1, angleStart, startCap, size);
+        this.drawLineCap(ctx, x2, y2, angleEnd,   endCap,   size);
+
+        ctx.restore();
+    }
+
+    getViewportBounds() {
+        const { offsetX, offsetY, scale } = this.view;
+        return {
+            x: -offsetX / scale,
+            y: -offsetY / scale,
+            width: this.canvas.width / scale,
+            height: this.canvas.height / scale,
+        };
+    }
+
+    isRectVisible(x, y, width, height, vp) {
+        return !(x + width < vp.x || x > vp.x + vp.width ||
+                 y + height < vp.y || y > vp.y + vp.height);
+    }
+
+    isPathVisible(path, vp) {
+        const xs = path.points.map(p => p.x);
+        const ys = path.points.map(p => p.y);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        return this.isRectVisible(minX, minY, maxX - minX, maxY - minY, vp);
+    }
+    
+    snapToGrid(value) {
+        const gridSize = 50;
+        return Math.round(value / gridSize) * gridSize;
+    }
+
+    snapPos(x, y) {
+        return { x: this.snapToGrid(x), y: this.snapToGrid(y) };
+    }
+
+    snapBoundsMove(bounds, dx, dy) {
+        const gridSize = 50;
+        const newX = bounds.x + dx;
+        const newY = bounds.y + dy;
+        const snappedX = Math.round(newX / gridSize) * gridSize;
+        const snappedY = Math.round(newY / gridSize) * gridSize;
+        return {
+            dx: dx + (snappedX - newX),
+            dy: dy + (snappedY - newY),
+        };
+    }
+
+    snapHandlePos(pos, handleId) {
+        const gridSize = 50;
+        let x = pos.x, y = pos.y;
+        if (handleId.includes('e') || handleId.includes('w')) {
+            x = Math.round(pos.x / gridSize) * gridSize;
+        }
+        if (handleId.includes('n') || handleId.includes('s')) {
+            y = Math.round(pos.y / gridSize) * gridSize;
+        }
+        if (handleId === 'nw' || handleId === 'ne' || handleId === 'sw' || handleId === 'se') {
+            x = Math.round(pos.x / gridSize) * gridSize;
+            y = Math.round(pos.y / gridSize) * gridSize;
+        }
+        return { x, y };
+    }
+
     showMathDialog(pos) { this.pendingMathPos = pos; document.getElementById('math-input-overlay').classList.remove('hidden'); document.getElementById('math-textarea').value = ''; document.getElementById('math-textarea').focus(); }
     hideMathDialog() { document.getElementById('math-input-overlay').classList.add('hidden'); }
-    confirmMath() { 
-        const c = document.getElementById('math-textarea').value; 
-        if (c.trim()) { const b = { id: Date.now(), x: this.pendingMathPos.x, y: this.pendingMathPos.y, content: c }; this.textBlocks.push(b); this.createTextBlockElement(b); this.saveCurrentNote(); } this.hideMathDialog(); 
+    confirmMath() {
+        const c = document.getElementById('math-textarea').value;
+        if (c.trim()) {
+            if (this.editingTextId != null) {
+                // 既存テキストブロックの編集
+                const idx = this.textBlocks.findIndex(b => b.id === this.editingTextId);
+                if (idx !== -1) {
+                    this.textBlocks[idx].content = c;
+                    const el = document.getElementById(`block-${this.editingTextId}`);
+                    if (el) el.remove();
+                    this.createTextBlockElement(this.textBlocks[idx]);
+                }
+            } else {
+                // 新規テキストブロック
+                const b = {
+                    id: Date.now(),
+                    x: this.pendingMathPos.x,
+                    y: this.pendingMathPos.y,
+                    width: this.pendingMathSize ? this.pendingMathSize.width : 200,
+                    height: this.pendingMathSize ? this.pendingMathSize.height : 100,
+                    content: c
+                };
+                this.textBlocks.push(b);
+                this.createTextBlockElement(b);
+            }
+            this.saveCurrentNote();
+        }
+        this.editingTextId = null;
+        this.pendingMathSize = null;
+        this.hideMathDialog();
     }
-    createTextBlockElement(b) { 
-        const div = document.createElement('div'); div.className = 'math-block'; div.id = `block-${b.id}`; try { katex.render(b.content, div, { throwOnError: false, displayMode: b.content.includes('$$') }); } catch (e) { div.innerText = b.content; } 
-        div.oncontextmenu = (e) => { e.preventDefault(); this.textBlocks = this.textBlocks.filter(blk => blk.id !== b.id); div.remove(); this.saveCurrentNote(); }; 
-        div.onclick = (e) => { if (this.tool === 'text') { e.stopPropagation(); this.pendingMathPos = { x: b.x, y: b.y }; document.getElementById('math-textarea').value = b.content; document.getElementById('math-input-overlay').classList.remove('hidden'); this.textBlocks = this.textBlocks.filter(blk => blk.id !== b.id); div.remove(); } }; document.getElementById('canvas-container').appendChild(div); 
+    createTextBlockElement(b) {
+        const div = document.createElement('div');
+        div.className = 'math-block';
+        div.id = `block-${b.id}`;
+        if (b.width) div.style.width = b.width + 'px';
+        if (b.height) div.style.minHeight = b.height + 'px';
+        div.style.overflow = 'hidden';
+        div.style.display = 'flex';
+        div.style.alignItems = 'center';
+        div.style.justifyContent = 'center';
+        div.style.border = '1px dashed rgba(124,111,247,0.3)';
+        div.style.borderRadius = '4px';
+        div.style.padding = '8px';
+        try {
+            katex.render(b.content, div, { throwOnError: false, displayMode: b.content.includes('$$') });
+        } catch (e) {
+            div.innerText = b.content;
+        }
+        div.oncontextmenu = (e) => {
+            e.preventDefault();
+            this.textBlocks = this.textBlocks.filter(blk => blk.id !== b.id);
+            div.remove();
+            this.saveCurrentNote();
+        };
+        div.onclick = (e) => {
+            if (this.tool === 'text') {
+                e.stopPropagation();
+                this.pendingMathPos = { x: b.x, y: b.y };
+                this.pendingMathSize = { width: b.width, height: b.height };
+                this.editingTextId = b.id;
+                document.getElementById('math-textarea').value = b.content;
+                document.getElementById('math-input-overlay').classList.remove('hidden');
+                document.getElementById('math-textarea').focus();
+            }
+        };
+        document.getElementById('canvas-container').appendChild(div);
     }
     syncTextBlocks() { for (const b of this.textBlocks) { const el = document.getElementById(`block-${b.id}`); if (el) { const vp = this.wToV(b.x, b.y); el.style.left = `${vp.x}px`; el.style.top = `${vp.y}px`; el.style.transform = `scale(${this.view.scale})`; el.style.transformOrigin = '0 0'; } } }
-    loadNote() { const s = localStorage.getItem('mathnote_data'); if (s) { this.note = JSON.parse(s); } else { this.note = { id: 'note_' + Date.now(), paths: [], textBlocks: [], graphObjects: [], shapeObjects: [], updateAt: Date.now() }; } this.paths = this.note.paths || []; this.textBlocks = this.note.textBlocks || []; this.graphObjects = this.note.graphObjects || []; this.shapeObjects = this.note.shapeObjects || []; document.querySelectorAll('.math-block').forEach(el => el.remove()); this.textBlocks.forEach(b => this.createTextBlockElement(b)); }
-    saveNote() { if (!this.note) return; Object.assign(this.note, { paths: this.paths, textBlocks: this.textBlocks, graphObjects: this.graphObjects, shapeObjects: this.shapeObjects, updateAt: Date.now() }); localStorage.setItem('mathnote_data', JSON.stringify(this.note)); }
+    loadNote() { const s = localStorage.getItem('mathnote_data'); if (s) { this.note = JSON.parse(s); } else { this.note = { id: 'note_' + Date.now(), paths: [], textBlocks: [], graphObjects: [], shapeObjects: [], lineObjects: [], updateAt: Date.now() }; } this.paths = this.note.paths || []; this.textBlocks = this.note.textBlocks || []; this.graphObjects = this.note.graphObjects || []; this.shapeObjects = this.note.shapeObjects || []; this.lineObjects = this.note.lineObjects || []; document.querySelectorAll('.math-block').forEach(el => el.remove()); this.textBlocks.forEach(b => this.createTextBlockElement(b)); }
+    saveNote() { if (!this.note) return; Object.assign(this.note, { paths: this.paths, textBlocks: this.textBlocks, graphObjects: this.graphObjects, shapeObjects: this.shapeObjects, lineObjects: this.lineObjects, updateAt: Date.now() }); localStorage.setItem('mathnote_data', JSON.stringify(this.note)); }
     saveCurrentNote() { this.saveNote(); }
     resetView() { this.view = { offsetX: 0, offsetY: 0, scale: 1.0, minScale: 0.1, maxScale: 10.0 }; document.getElementById('zoom-label').innerText = '100%'; }
 

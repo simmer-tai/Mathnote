@@ -127,8 +127,26 @@ body, html {
     box-sizing: border-box;
 }
 
-#sub-toolbar.visible, #shape-sub-toolbar.visible {
+#sub-toolbar.visible, #shape-sub-toolbar.visible, #line-sub-toolbar.visible {
     width: 56px;
+}
+
+#line-sub-toolbar {
+    position: fixed;
+    top: 0;
+    left: 56px;
+    width: 0;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg-dark);
+    z-index: 150;
+    transition: width 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+    box-sizing: border-box;
 }
 
 #shape-sub-toolbar {

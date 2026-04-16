@@ -211,7 +211,7 @@ function drawGraphStrokes(ctx, originX, originY, cellSize) {
  * 矢印を描画する
  */
 function drawArrow(ctx, fromX, fromY, toX, toY) {
-    const headLen = 10 / graphEditScale;
+    const headLen = 10;
     const angle = Math.atan2(toY - fromY, toX - fromX);
 
     // 軸の線
