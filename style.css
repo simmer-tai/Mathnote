@@ -149,6 +149,34 @@ body, html {
     box-sizing: border-box;
 }
 
+/* 直線サブツールバーのポップアップ */
+.cap-selector {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cap-popup {
+    display: none;
+    position: absolute;
+    left: 44px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 4px;
+    flex-direction: row;
+    gap: 2px;
+    z-index: 300;
+    white-space: nowrap;
+}
+
+.cap-popup.open {
+    display: flex;
+}
+
 #shape-sub-toolbar {
     position: fixed;
     top: 0;

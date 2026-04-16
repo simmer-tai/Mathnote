@@ -67,7 +67,9 @@ class MathNote {
         this.setupEventListeners();
         this.setupSubTooltip();
         this.updateUIModes();
-        this.draw();
+        this._dirty = true;
+        this._rafId = null;
+        this._scheduleRender();
     }
 
     // --- 座標変換ユーティリティ ---
@@ -89,7 +91,18 @@ class MathNote {
         }
     }
 
-    draw() {
+    _scheduleRender() {
+        if (this._rafId) return;
+        this._rafId = requestAnimationFrame(() => {
+            this._rafId = null;
+            if (this._dirty) {
+                this._dirty = false;
+                this._render();
+            }
+        });
+    }
+
+    _render() {
         const { ctx, canvas, view } = this;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         this.drawInfiniteGrid(ctx, canvas, view);
@@ -107,8 +120,7 @@ class MathNote {
             if (this.isRectVisible(s.x, s.y, s.width, s.height, vp)) this.drawShape(ctx, s);
         }
         if (this.previewShape) this.drawShape(ctx, this.previewShape);
-        
-        // 選択状態の強調表示
+
         if (this.selectedIds.length > 0) {
             const bounds = this.getCombinedBounds(this.selectedIds);
             if (bounds) this.drawSelectionHandles(ctx, bounds);
@@ -126,7 +138,6 @@ class MathNote {
         }
         if (this.previewLine) this.drawLineObject(ctx, this.previewLine);
 
-        // 直線の選択ハンドル
         if (this.tool === 'select' && this.selectedIds.some(i => i.type === 'line')) {
             for (const sel of this.selectedIds.filter(i => i.type === 'line')) {
                 const l = this.lineObjects.find(obj => obj.id === sel.id);
@@ -144,7 +155,6 @@ class MathNote {
             }
         }
 
-        // ラバーバンド描画
         if (this.isRubberBanding) {
             ctx.strokeStyle = '#4A90E2';
             ctx.lineWidth = 1 / view.scale;
@@ -172,6 +182,11 @@ class MathNote {
 
         ctx.restore();
         this.syncTextBlocks();
+    }
+
+    draw() {
+        this._dirty = true;
+        this._scheduleRender();
     }
 
     /**
@@ -252,11 +267,19 @@ class MathNote {
     }
 
     drawInfiniteGrid(ctx, canvas, view) {
-        const gridSize = 50 * view.scale; 
-        const offsetX = view.offsetX % gridSize; const offsetY = view.offsetY % gridSize;
-        ctx.beginPath(); ctx.strokeStyle = '#f0f0f0'; ctx.lineWidth = 1;
-        for (let x = offsetX; x <= canvas.width; x += gridSize) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
-        for (let y = offsetY; y <= canvas.height; y += gridSize) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
+        const gridSize = 50 * view.scale;
+        if (gridSize < 4) return; // ズームアウトしすぎたらグリッド省略
+        const offsetX = view.offsetX % gridSize;
+        const offsetY = view.offsetY % gridSize;
+        ctx.beginPath();
+        ctx.strokeStyle = '#f0f0f0';
+        ctx.lineWidth = 1;
+        for (let x = offsetX; x <= canvas.width; x += gridSize) {
+            ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
+        }
+        for (let y = offsetY; y <= canvas.height; y += gridSize) {
+            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+        }
         ctx.stroke();
     }
 
@@ -330,16 +353,14 @@ class MathNote {
     }
 
     getPathBounds(path) {
-        const xs = path.points.map(p => p.x);
-        const ys = path.points.map(p => p.y);
-        const minX = Math.min(...xs);
-        const minY = Math.min(...ys);
-        return {
-            x: minX,
-            y: minY,
-            width: Math.max(...xs) - minX,
-            height: Math.max(...ys) - minY,
-        };
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of path.points) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        }
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
     }
 
     getCombinedBounds(selectedItems) {
@@ -654,9 +675,11 @@ class MathNote {
         const shapeIdsToDelete = this.selectedIds.filter(i => i.type === 'shape').map(i => i.id);
         const pathIndicesToDelete = this.selectedIds.filter(i => i.type === 'path').map(i => i.id).sort((a, b) => b - a);
         const graphIdsToDelete = this.selectedIds.filter(i => i.type === 'graph').map(i => i.id);
+        const lineIdsToDelete = this.selectedIds.filter(i => i.type === 'line').map(i => i.id);
 
         this.shapeObjects = this.shapeObjects.filter(s => !shapeIdsToDelete.includes(s.id));
         this.graphObjects = this.graphObjects.filter(g => !graphIdsToDelete.includes(g.id));
+        this.lineObjects = this.lineObjects.filter(l => !lineIdsToDelete.includes(l.id));
         
         for (const idx of pathIndicesToDelete) {
             this.paths.splice(idx, 1);
@@ -1331,19 +1354,89 @@ class MathNote {
         });
 
         document.querySelectorAll('.line-start-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
                 this.line.startCap = btn.dataset.cap;
                 document.querySelectorAll('.line-start-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
+                // トリガーアイコンを選択中のSVGに更新
+                document.getElementById('start-cap-trigger').innerHTML = btn.innerHTML;
+                document.getElementById('start-cap-popup').classList.remove('open');
+                this.selectedIds.filter(i => i.type === 'line').forEach(sel => {
+                    const l = this.lineObjects.find(obj => obj.id === sel.id);
+                    if (l) l.startCap = btn.dataset.cap;
+                });
+                this.saveCurrentNote();
+                this.draw();
             });
         });
 
         document.querySelectorAll('.line-end-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
                 this.line.endCap = btn.dataset.cap;
                 document.querySelectorAll('.line-end-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
+                // トリガーアイコンを選択中のSVGに更新
+                document.getElementById('end-cap-trigger').innerHTML = btn.innerHTML;
+                document.getElementById('end-cap-popup').classList.remove('open');
+                this.selectedIds.filter(i => i.type === 'line').forEach(sel => {
+                    const l = this.lineObjects.find(obj => obj.id === sel.id);
+                    if (l) l.endCap = btn.dataset.cap;
+                });
+                this.saveCurrentNote();
+                this.draw();
             });
+        });
+
+        const startTrigger = document.getElementById('start-cap-trigger');
+        const startPopup   = document.getElementById('start-cap-popup');
+        const endTrigger   = document.getElementById('end-cap-trigger');
+        const endPopup     = document.getElementById('end-cap-popup');
+
+        const toggleCapPopup = (showPopup, hidePopup) => {
+            const isOpen = showPopup.classList.contains('open');
+            hidePopup.classList.remove('open');
+            if (isOpen) {
+                showPopup.classList.remove('open');
+            } else {
+                showPopup.classList.add('open');
+            }
+        };
+
+        // マウスとタッチ両対応
+        ['click', 'touchend'].forEach(evtType => {
+            if (!startTrigger || !endTrigger) return;
+            startTrigger.addEventListener(evtType, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleCapPopup(startPopup, endPopup);
+            }, { passive: false });
+
+            endTrigger.addEventListener(evtType, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleCapPopup(endPopup, startPopup);
+            }, { passive: false });
+        });
+
+        // ポップアップ外タップで閉じる
+        document.addEventListener('touchend', (e) => {
+            if (!startTrigger.contains(e.target) && !startPopup.contains(e.target)) {
+                startPopup.classList.remove('open');
+            }
+            if (!endTrigger.contains(e.target) && !endPopup.contains(e.target)) {
+                endPopup.classList.remove('open');
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!startTrigger.contains(e.target) && !startPopup.contains(e.target)) {
+                startPopup.classList.remove('open');
+            }
+            if (!endTrigger.contains(e.target) && !endPopup.contains(e.target)) {
+                endPopup.classList.remove('open');
+            }
         });
 
 
@@ -1528,11 +1621,13 @@ class MathNote {
         };
     }
 
-    drawLineCap(ctx, x, y, angle, cap, size) {
+    drawLineCap(ctx, x, y, angle, cap, size, color) {
         if (cap === 'none') return;
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
         const s = size * 3;
         if (cap === 'arrow-filled') {
             ctx.beginPath();
@@ -1540,7 +1635,6 @@ class MathNote {
             ctx.lineTo(-s, -s * 0.4);
             ctx.lineTo(-s,  s * 0.4);
             ctx.closePath();
-            ctx.fillStyle = ctx.strokeStyle;
             ctx.fill();
         } else if (cap === 'arrow-open') {
             ctx.beginPath();
@@ -1551,12 +1645,11 @@ class MathNote {
         } else if (cap === 'circle-filled') {
             ctx.beginPath();
             ctx.arc(-s * 0.5, 0, s * 0.4, 0, Math.PI * 2);
-            ctx.fillStyle = ctx.strokeStyle;
             ctx.fill();
         } else if (cap === 'circle-open') {
             ctx.beginPath();
             ctx.arc(-s * 0.5, 0, s * 0.4, 0, Math.PI * 2);
-            ctx.fillStyle = 'white';
+            ctx.fillStyle = '#ffffff';
             ctx.fill();
             ctx.stroke();
         } else if (cap === 'triangle') {
@@ -1565,7 +1658,6 @@ class MathNote {
             ctx.lineTo(-s, -s * 0.5);
             ctx.lineTo(-s,  s * 0.5);
             ctx.closePath();
-            ctx.fillStyle = ctx.strokeStyle;
             ctx.fill();
         }
         ctx.restore();
@@ -1589,8 +1681,8 @@ class MathNote {
 
         const angleStart = Math.atan2(y1 - y2, x1 - x2);
         const angleEnd   = Math.atan2(y2 - y1, x2 - x1);
-        this.drawLineCap(ctx, x1, y1, angleStart, startCap, size);
-        this.drawLineCap(ctx, x2, y2, angleEnd,   endCap,   size);
+        this.drawLineCap(ctx, x1, y1, angleStart, startCap, size, color);
+        this.drawLineCap(ctx, x2, y2, angleEnd,   endCap,   size, color);
 
         ctx.restore();
     }
@@ -1611,10 +1703,13 @@ class MathNote {
     }
 
     isPathVisible(path, vp) {
-        const xs = path.points.map(p => p.x);
-        const ys = path.points.map(p => p.y);
-        const minX = Math.min(...xs), maxX = Math.max(...xs);
-        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of path.points) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        }
         return this.isRectVisible(minX, minY, maxX - minX, maxY - minY, vp);
     }
     
@@ -1725,7 +1820,26 @@ class MathNote {
         };
         document.getElementById('canvas-container').appendChild(div);
     }
-    syncTextBlocks() { for (const b of this.textBlocks) { const el = document.getElementById(`block-${b.id}`); if (el) { const vp = this.wToV(b.x, b.y); el.style.left = `${vp.x}px`; el.style.top = `${vp.y}px`; el.style.transform = `scale(${this.view.scale})`; el.style.transformOrigin = '0 0'; } } }
+    syncTextBlocks() {
+        if (this.textBlocks.length === 0) return;
+        const { offsetX, offsetY, scale } = this.view;
+        // ビューが変化していない場合はスキップ
+        if (this._lastSyncView &&
+            this._lastSyncView.offsetX === offsetX &&
+            this._lastSyncView.offsetY === offsetY &&
+            this._lastSyncView.scale === scale) return;
+        this._lastSyncView = { offsetX, offsetY, scale };
+        for (const b of this.textBlocks) {
+            const el = document.getElementById(`block-${b.id}`);
+            if (el) {
+                const vp = this.wToV(b.x, b.y);
+                el.style.left = `${vp.x}px`;
+                el.style.top = `${vp.y}px`;
+                el.style.transform = `scale(${scale})`;
+                el.style.transformOrigin = '0 0';
+            }
+        }
+    }
     loadNote() { const s = localStorage.getItem('mathnote_data'); if (s) { this.note = JSON.parse(s); } else { this.note = { id: 'note_' + Date.now(), paths: [], textBlocks: [], graphObjects: [], shapeObjects: [], lineObjects: [], updateAt: Date.now() }; } this.paths = this.note.paths || []; this.textBlocks = this.note.textBlocks || []; this.graphObjects = this.note.graphObjects || []; this.shapeObjects = this.note.shapeObjects || []; this.lineObjects = this.note.lineObjects || []; document.querySelectorAll('.math-block').forEach(el => el.remove()); this.textBlocks.forEach(b => this.createTextBlockElement(b)); }
     saveNote() { if (!this.note) return; Object.assign(this.note, { paths: this.paths, textBlocks: this.textBlocks, graphObjects: this.graphObjects, shapeObjects: this.shapeObjects, lineObjects: this.lineObjects, updateAt: Date.now() }); localStorage.setItem('mathnote_data', JSON.stringify(this.note)); }
     saveCurrentNote() { this.saveNote(); }
