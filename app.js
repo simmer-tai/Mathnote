@@ -754,14 +754,13 @@ class MathNote {
                 }
             }
 
-            // 2. Check handles
+            // 2. リサイズハンドルのヒットテスト
             if (this.selectedIds.length > 0) {
                 const combinedRect = this.getCombinedBounds(this.selectedIds);
                 if (combinedRect) {
                     const h = this.getHandleAt(combinedRect, pos);
                     if (h) {
                         this.resizingHandle = h;
-                        // 各オブジェクトの現在位置・サイズのスナップショットを保存
                         this.resizeStartShape = { ...combinedRect };
                         this.resizeStartPos = { ...pos };
                         this.resizeStartObjects = this.selectedIds.map(item => {
@@ -782,14 +781,41 @@ class MathNote {
                 }
             }
 
-            // 2. Hit-testing
-            // すでに選択されている要素のいずれかをドラッグ開始するかチェック
-            const combinedBounds = this.getCombinedBounds(this.selectedIds);
-            if (combinedBounds && pos.x >= combinedBounds.x && pos.x <= combinedBounds.x + combinedBounds.width &&
-                pos.y >= combinedBounds.y && pos.y <= combinedBounds.y + combinedBounds.height) {
-                this.isDrawing = false; // ドラッグ開始
+            // 直線の端点ハンドルのヒットテスト（combinedBounds判定より先に行う）
+            const lineHr = 10 / this.view.scale;
+            for (let i = this.lineObjects.length - 1; i >= 0; i--) {
+                const l = this.lineObjects[i];
+                if (Math.hypot(pos.x - l.x1, pos.y - l.y1) < lineHr) {
+                    this.selectedLineHandle = { id: l.id, point: 'start' };
+                    this.selectedIds = [{ type: 'line', id: l.id }];
+                    this.draw();
+                    return;
+                }
+                if (Math.hypot(pos.x - l.x2, pos.y - l.y2) < lineHr) {
+                    this.selectedLineHandle = { id: l.id, point: 'end' };
+                    this.selectedIds = [{ type: 'line', id: l.id }];
+                    this.draw();
+                    return;
+                }
+            }
+
+            // 3. オブジェクトのヒットテスト → 選択＋即ドラッグ準備
+            const startDrag = (newSelectedIds, snapshotFn) => {
+                this.selectedIds = newSelectedIds;
                 this.isDraggingSelection = true;
-                this.dragOffset = { x: pos.x, y: pos.y };
+                this.dragStartPos = { x: pos.x, y: pos.y };
+                this.dragStartBounds = this.getCombinedBounds(this.selectedIds);
+                this.dragStartObjects = snapshotFn();
+                this.updatePropertiesPanel();
+                this.draw();
+            };
+
+            // 既存選択範囲内をタップ → そのままドラッグ
+            const combinedBounds = this.getCombinedBounds(this.selectedIds);
+            if (combinedBounds &&
+                pos.x >= combinedBounds.x && pos.x <= combinedBounds.x + combinedBounds.width &&
+                pos.y >= combinedBounds.y && pos.y <= combinedBounds.y + combinedBounds.height) {
+                this.isDraggingSelection = true;
                 this.dragStartPos = { x: pos.x, y: pos.y };
                 this.dragStartBounds = combinedBounds;
                 this.dragStartObjects = this.selectedIds.map(item => {
@@ -802,70 +828,67 @@ class MathNote {
                     } else if (item.type === 'graph') {
                         const g = this.graphObjects.find(obj => obj.id === item.id);
                         return g ? { ...item, snapshot: { x: g.x, y: g.y } } : item;
+                    } else if (item.type === 'line') {
+                        const l = this.lineObjects.find(obj => obj.id === item.id);
+                        return l ? { ...item, snapshot: { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 } } : item;
                     }
                     return item;
                 });
                 return;
             }
 
-            // 新規に要素を選択
             // 図形
             for (let i = this.shapeObjects.length - 1; i >= 0; i--) {
                 const s = this.shapeObjects[i];
                 if (pos.x >= s.x && pos.x <= s.x + s.width && pos.y >= s.y && pos.y <= s.y + s.height) {
-                    this.selectedIds = [{ type: 'shape', id: s.id }];
-                    this.isDraggingSelection = true;
-                    this.dragOffset = { x: pos.x, y: pos.y };
-                    this.dragStartPos = { x: pos.x, y: pos.y };
-                    this.dragStartBounds = { x: s.x, y: s.y, width: s.width, height: s.height };
-                    this.dragStartObjects = this.selectedIds.map(item => ({ ...item, snapshot: { x: s.x, y: s.y } }));
-                    this.updatePropertiesPanel();
-                    this.draw();
+                    startDrag(
+                        [{ type: 'shape', id: s.id }],
+                        () => [{ type: 'shape', id: s.id, snapshot: { x: s.x, y: s.y } }]
+                    );
                     return;
                 }
             }
             // ストローク
             for (let i = this.paths.length - 1; i >= 0; i--) {
                 if (this.hitTestPath(this.paths[i], pos, this.view.scale)) {
-                    this.selectedIds = [{ type: 'path', id: i }];
-                    this.isDraggingSelection = true;
-                    this.dragOffset = { x: pos.x, y: pos.y };
-                    this.dragStartPos = { x: pos.x, y: pos.y };
-                    this.dragStartBounds = this.getPathBounds(this.paths[i]);
-                    this.dragStartObjects = this.selectedIds.map(item => ({ ...item, snapshot: { points: this.paths[i].points.map(pt => ({ ...pt })) } }));
-                    this.updatePropertiesPanel();
-                    this.draw();
+                    const p = this.paths[i];
+                    startDrag(
+                        [{ type: 'path', id: i }],
+                        () => [{ type: 'path', id: i, snapshot: { points: p.points.map(pt => ({ ...pt })) } }]
+                    );
                     return;
                 }
             }
-            // グラフ
-            for (let i = this.graphObjects.length - 1; i >= 0; i--) {
-                const g = this.graphObjects[i];
-                if (pos.x >= g.x && pos.x <= g.x + g.width && pos.y >= g.y && pos.y <= g.y + g.height) {
-                    this.selectedIds = [{ type: 'graph', id: g.id }];
-                    this.isDraggingSelection = true;
-                    this.dragOffset = { x: pos.x, y: pos.y };
-                    this.dragStartPos = { x: pos.x, y: pos.y };
-                    this.dragStartBounds = { x: g.x, y: g.y, width: g.width, height: g.height };
-                    this.dragStartObjects = this.selectedIds.map(item => ({ ...item, snapshot: { x: g.x, y: g.y } }));
-                    this.updatePropertiesPanel();
-                    this.draw();
-                    return;
+                // グラフ
+                for (let i = this.graphObjects.length - 1; i >= 0; i--) {
+                    const g = this.graphObjects[i];
+                    if (pos.x >= g.x && pos.x <= g.x + g.width && pos.y >= g.y && pos.y <= g.y + g.height) {
+                        startDrag(
+                            [{ type: 'graph', id: g.id }],
+                            () => [{ type: 'graph', id: g.id, snapshot: { x: g.x, y: g.y } }]
+                        );
+                        return;
+                    }
                 }
-            }
+                // 直線（線全体のドラッグ）
+                for (let i = this.lineObjects.length - 1; i >= 0; i--) {
+                    const l = this.lineObjects[i];
+                    const d = this.distToSegment(pos, { x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 });
+                    if (d < 8 / this.view.scale) {
+                        startDrag(
+                            [{ type: 'line', id: l.id }],
+                            () => [{ type: 'line', id: l.id, snapshot: { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 } }]
+                        );
+                        return;
+                    }
+                }
 
-            // 3. Click on empty space → Rubber band
-            this.selectedIds = [];
-            this.isRubberBanding = true;
-            this.rubberStart = { ...pos };
-            this.rubberEnd = { ...pos };
-            this.updatePropertiesPanel();
-            this.draw();
-            return;
-        }
+                // 4. 何もない場所 → なにもしない（ダブルタップでラバーバンド開始）
+                return;
+            }
 
         // シェイプオブジェクト の判定 (ペンツール・消しゴム以外)
-        if (this.tool !== 'pen' && this.tool !== 'eraser') {
+        if (this.tool !== 'pen' && this.tool !== 'eraser' && this.tool !== 'line') {
             for (let i = this.shapeObjects.length-1; i >= 0; i--) {
                 const s = this.shapeObjects[i];
                 if (pos.x >= s.x && pos.x <= s.x + s.width && pos.y >= s.y && pos.y <= s.y + s.height) {
@@ -893,17 +916,20 @@ class MathNote {
         else if (this.tool === 'pen') { this.saveHistory(); this.isDrawing = true; this.currentPath = { color: this.pen.color, size: this.pen.size, style: this.pen.style, points: [pos] }; this.draw(); }
         else if (this.tool === 'eraser') { this.saveHistory(); this.eraseAt(pos); this.isDrawing = true; this.draw(); }
         else if (this.tool === 'line') {
-            // 選択中の直線ハンドルのヒットテスト
-            for (const sel of this.selectedIds.filter(i => i.type === 'line')) {
-                const l = this.lineObjects.find(obj => obj.id === sel.id);
-                if (!l) continue;
-                const hr = 10 / this.view.scale;
+            const hr = 10 / this.view.scale;
+            // 全lineObjectsに対してヒットテスト（selectedIds不問）
+            for (let i = this.lineObjects.length - 1; i >= 0; i--) {
+                const l = this.lineObjects[i];
                 if (Math.hypot(pos.x - l.x1, pos.y - l.y1) < hr) {
                     this.selectedLineHandle = { id: l.id, point: 'start' };
+                    this.selectedIds = [{ type: 'line', id: l.id }];
+                    this.draw();
                     return;
                 }
                 if (Math.hypot(pos.x - l.x2, pos.y - l.y2) < hr) {
                     this.selectedLineHandle = { id: l.id, point: 'end' };
+                    this.selectedIds = [{ type: 'line', id: l.id }];
+                    this.draw();
                     return;
                 }
                 // 線全体のドラッグ
@@ -912,6 +938,8 @@ class MathNote {
                     this.selectedLineHandle = { id: l.id, point: 'body' };
                     this.dragOffset = { x: pos.x, y: pos.y };
                     this.dragLineStartSnapshot = { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 };
+                    this.selectedIds = [{ type: 'line', id: l.id }];
+                    this.draw();
                     return;
                 }
             }
@@ -949,6 +977,19 @@ class MathNote {
 
     handlePointerMove(pos, e) {
         if (this.isPanning) { this.view.offsetX += (e.clientX - this.lastMousePos.x); this.view.offsetY += (e.clientY - this.lastMousePos.y); this.lastMousePos = { x: e.clientX, y: e.clientY }; this.draw(); return; }
+
+        if (this.tool === 'select' && this.selectedLineHandle) {
+            const l = this.lineObjects.find(obj => obj.id === this.selectedLineHandle.id);
+            if (l) {
+                if (this.selectedLineHandle.point === 'start') {
+                    l.x1 = pos.x; l.y1 = pos.y;
+                } else if (this.selectedLineHandle.point === 'end') {
+                    l.x2 = pos.x; l.y2 = pos.y;
+                }
+                this.draw();
+            }
+            return;
+        }
 
         if (this.tool === 'line') {
             // ハンドルドラッグ
@@ -1091,6 +1132,12 @@ class MathNote {
                 } else if (item.type === 'graph') {
                     const g = this.graphObjects.find(obj => obj.id === item.id);
                     if (g) { g.x = item.snapshot.x + finalDx; g.y = item.snapshot.y + finalDy; }
+                } else if (item.type === 'line') {
+                    const l = this.lineObjects.find(obj => obj.id === item.id);
+                    if (l) {
+                        l.x1 = item.snapshot.x1 + finalDx; l.y1 = item.snapshot.y1 + finalDy;
+                        l.x2 = item.snapshot.x2 + finalDx; l.y2 = item.snapshot.y2 + finalDy;
+                    }
                 }
             }
             this.draw();
@@ -1220,6 +1267,7 @@ class MathNote {
         this.dragStartPos = null; this.dragStartBounds = null; this.dragStartObjects = null;
         this.draggingGraphId = null; this.resizingGraphId = null;
         this.draggingShapeId = null; this.resizingShapeId = null;
+        this.selectedLineHandle = null; this.dragLineStartSnapshot = null;
 
         if (this.tool === 'select') {
             this.canvas.style.cursor = 'default';
@@ -1533,12 +1581,22 @@ class MathNote {
     }
 
     onDoubleTap(pos) {
-        const target = this.graphObjects.find(g => pos.x >= g.x && pos.x <= g.x + g.width && pos.y >= g.y && pos.y <= g.y + g.height);
-        if (target) {
-            if (typeof enterGraphEditMode === 'function') {
+        // グラフオブジェクトのダブルタップ → グラフ編集モード
+        if (this.tool !== 'select') {
+            const target = this.graphObjects.find(g => pos.x >= g.x && pos.x <= g.x + g.width && pos.y >= g.y && pos.y <= g.y + g.height);
+            if (target && typeof enterGraphEditMode === 'function') {
                 enterGraphEditMode(target);
             }
+            return;
         }
+
+        // 選択ツールのダブルタップ → ラバーバンド開始
+        this.selectedIds = [];
+        this.isRubberBanding = true;
+        this.rubberStart = { ...pos };
+        this.rubberEnd = { ...pos };
+        this.updatePropertiesPanel();
+        this.draw();
     }
 
     zoomAt(centerX, centerY, factor, view) {

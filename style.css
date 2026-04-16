@@ -127,7 +127,7 @@ body, html {
     box-sizing: border-box;
 }
 
-#sub-toolbar.visible, #shape-sub-toolbar.visible, #line-sub-toolbar.visible {
+#sub-toolbar.visible, #shape-sub-toolbar.visible {
     width: 56px;
 }
 
@@ -135,18 +135,27 @@ body, html {
     position: fixed;
     top: 0;
     left: 56px;
-    width: 0;
+    width: 56px;
     height: 100vh;
-    overflow: hidden;
+    transform: translateX(-56px);
+    transition: transform 0.2s ease;
+    overflow: visible;
     background: var(--bg-dark);
     z-index: 150;
-    transition: width 0.2s ease;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
     padding: 12px 0;
     box-sizing: border-box;
+}
+
+#line-sub-toolbar.visible {
+    transform: translateX(0);
+}
+
+#line-sub-toolbar:not(.visible) .cap-popup {
+    display: none !important;
 }
 
 /* 直線サブツールバーのポップアップ */
