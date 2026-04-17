@@ -56,6 +56,8 @@ class MathNote {
         this.sizeSwatchBounds = null;
         this.isHoverDelete = false;
 
+        this.noteId = null;
+        this.noteName = "名称未設定";
         this.init();
     }
 
@@ -66,10 +68,29 @@ class MathNote {
         this.loadNote();
         this.setupEventListeners();
         this.setupSubTooltip();
+        this.setupStorageUI();
         this.updateUIModes();
         this._dirty = true;
         this._rafId = null;
         this._scheduleRender();
+    }
+
+    setupStorageUI() {
+        const saveBtn = document.getElementById('tool-save');
+        if (saveBtn) {
+            saveBtn.onclick = () => {
+                const newName = window.prompt('ボード名を入力してください', this.noteName);
+                if (newName !== null) {
+                    this.saveNote(newName.trim() || '名称未設定');
+                }
+            };
+        }
+        const libraryBtn = document.getElementById('tool-library');
+        if (libraryBtn) {
+            libraryBtn.onclick = () => {
+                window.location.href = 'library.html';
+            };
+        }
     }
 
     // --- 座標変換ユーティリティ ---
@@ -1896,9 +1917,119 @@ class MathNote {
             }
         }
     }
-    loadNote() { const s = localStorage.getItem('mathnote_data'); if (s) { this.note = JSON.parse(s); } else { this.note = { id: 'note_' + Date.now(), paths: [], textBlocks: [], graphObjects: [], shapeObjects: [], lineObjects: [], updateAt: Date.now() }; } this.paths = this.note.paths || []; this.textBlocks = this.note.textBlocks || []; this.graphObjects = this.note.graphObjects || []; this.shapeObjects = this.note.shapeObjects || []; this.lineObjects = this.note.lineObjects || []; document.querySelectorAll('.math-block').forEach(el => el.remove()); this.textBlocks.forEach(b => this.createTextBlockElement(b)); }
-    saveNote() { if (!this.note) return; Object.assign(this.note, { paths: this.paths, textBlocks: this.textBlocks, graphObjects: this.graphObjects, shapeObjects: this.shapeObjects, lineObjects: this.lineObjects, updateAt: Date.now() }); localStorage.setItem('mathnote_data', JSON.stringify(this.note)); }
-    saveCurrentNote() { this.saveNote(); }
+    loadNote() {
+        const params = new URLSearchParams(window.location.search);
+        this.noteId = params.get('id');
+
+        let data = null;
+        if (this.noteId) {
+            const s = localStorage.getItem(`mathnote_note_${this.noteId}`);
+            if (s) {
+                data = JSON.parse(s);
+                // インデックスから名前を取得
+                const index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+                const entry = index.find(e => e.id === this.noteId);
+                if (entry) this.noteName = entry.name;
+            }
+        }
+
+        if (data) {
+            this.note = data;
+        } else {
+            // 新規ノート
+            this.note = {
+                paths: [], textBlocks: [], graphObjects: [], shapeObjects: [], lineObjects: [],
+                updatedAt: Date.now()
+            };
+            this.noteId = null;
+            this.noteName = "名称未設定";
+        }
+
+        this.paths = this.note.paths || [];
+        this.textBlocks = this.note.textBlocks || [];
+        this.graphObjects = this.note.graphObjects || [];
+        this.shapeObjects = this.note.shapeObjects || [];
+        this.lineObjects = this.note.lineObjects || [];
+
+        // UI同期
+        document.querySelectorAll('.math-block').forEach(el => el.remove());
+        this.textBlocks.forEach(b => this.createTextBlockElement(b));
+        this.draw();
+    }
+
+    saveNote(name) {
+        // インデックスの読み込み
+        let index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+        
+        // 名前が変更された、または新規作成の場合のナンバリング処理
+        let finalName = name;
+        const getBaseName = (n) => n.replace(/\s\(\d+\)$/, '');
+        const otherNotes = index.filter(e => e.id !== this.noteId);
+        
+        let counter = 0;
+        while (otherNotes.some(e => e.name === finalName)) {
+            counter++;
+            finalName = `${name} (${counter})`;
+        }
+        this.noteName = finalName;
+
+        // IDがない場合は新規発行
+        if (!this.noteId) {
+            this.noteId = 'note_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+            // URL更新 (履歴に残さず置換)
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('id', this.noteId);
+            window.history.replaceState({}, '', newUrl);
+        }
+
+        // ノートデータの作成
+        const noteData = {
+            paths: this.paths,
+            textBlocks: this.textBlocks,
+            graphObjects: this.graphObjects,
+            shapeObjects: this.shapeObjects,
+            lineObjects: this.lineObjects,
+            updatedAt: Date.now()
+        };
+
+        // ローカルストレージ保存
+        localStorage.setItem(`mathnote_note_${this.noteId}`, JSON.stringify(noteData));
+
+        // インデックス更新
+        const entryIdx = index.findIndex(e => e.id === this.noteId);
+        const entry = { id: this.noteId, name: this.noteName, updatedAt: noteData.updatedAt };
+        if (entryIdx !== -1) {
+            index[entryIdx] = entry;
+        } else {
+            index.push(entry);
+        }
+        localStorage.setItem('mathnote_index', JSON.stringify(index));
+        
+        console.log(`Saved: ${this.noteName} (${this.noteId})`);
+    }
+
+    saveCurrentNote() {
+        // IDがある場合のみ自動保存（上書き）
+        if (this.noteId) {
+            const noteData = {
+                paths: this.paths,
+                textBlocks: this.textBlocks,
+                graphObjects: this.graphObjects,
+                shapeObjects: this.shapeObjects,
+                lineObjects: this.lineObjects,
+                updatedAt: Date.now()
+            };
+            localStorage.setItem(`mathnote_note_${this.noteId}`, JSON.stringify(noteData));
+            
+            // インデックスの日時も更新
+            let index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+            const entryIdx = index.findIndex(e => e.id === this.noteId);
+            if (entryIdx !== -1) {
+                index[entryIdx].updatedAt = noteData.updatedAt;
+                localStorage.setItem('mathnote_index', JSON.stringify(index));
+            }
+        }
+    }
     resetView() { this.view = { offsetX: 0, offsetY: 0, scale: 1.0, minScale: 0.1, maxScale: 10.0 }; document.getElementById('zoom-label').innerText = '100%'; }
 
 }
