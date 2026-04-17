@@ -978,14 +978,12 @@ class MathNote {
     handlePointerMove(pos, e) {
         if (this.isPanning) { this.view.offsetX += (e.clientX - this.lastMousePos.x); this.view.offsetY += (e.clientY - this.lastMousePos.y); this.lastMousePos = { x: e.clientX, y: e.clientY }; this.draw(); return; }
 
+        // 端点ドラッグ中は他の処理をスキップ
         if (this.tool === 'select' && this.selectedLineHandle) {
             const l = this.lineObjects.find(obj => obj.id === this.selectedLineHandle.id);
             if (l) {
-                if (this.selectedLineHandle.point === 'start') {
-                    l.x1 = pos.x; l.y1 = pos.y;
-                } else if (this.selectedLineHandle.point === 'end') {
-                    l.x2 = pos.x; l.y2 = pos.y;
-                }
+                if (this.selectedLineHandle.point === 'start') { l.x1 = pos.x; l.y1 = pos.y; }
+                else if (this.selectedLineHandle.point === 'end') { l.x2 = pos.x; l.y2 = pos.y; }
                 this.draw();
             }
             return;
