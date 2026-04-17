@@ -76,15 +76,38 @@ class MathNote {
     }
 
     setupStorageUI() {
-        const saveBtn = document.getElementById('tool-save');
-        if (saveBtn) {
-            saveBtn.onclick = () => {
-                const newName = window.prompt('ボード名を入力してください', this.noteName);
-                if (newName !== null) {
-                    this.saveNote(newName.trim() || '名称未設定');
+        const display = document.getElementById('board-title-display');
+        const input = document.getElementById('board-title-input');
+
+        if (display && input) {
+            display.onclick = () => {
+                display.style.display = 'none';
+                input.style.display = 'block';
+                input.focus();
+                input.select();
+            };
+
+            const finishEditing = () => {
+                const newName = input.value.trim() || '名称未設定';
+                this.renameNote(newName);
+                display.innerText = newName;
+                input.value = newName;
+                input.style.display = 'none';
+                display.style.display = 'block';
+                this.saveCurrentNote();
+            };
+
+            input.onkeydown = (e) => {
+                if (e.key === 'Enter') finishEditing();
+                if (e.key === 'Escape') {
+                    input.value = this.noteName;
+                    input.style.display = 'none';
+                    display.style.display = 'block';
                 }
             };
+            input.onblur = finishEditing;
         }
+
         const libraryBtn = document.getElementById('tool-library');
         if (libraryBtn) {
             libraryBtn.onclick = () => {
@@ -1952,37 +1975,27 @@ class MathNote {
         this.lineObjects = this.note.lineObjects || [];
 
         // UI同期
+        const display = document.getElementById('board-title-display');
+        const input = document.getElementById('board-title-input');
+        if (display) display.innerText = this.noteName;
+        if (input) input.value = this.noteName;
+
         document.querySelectorAll('.math-block').forEach(el => el.remove());
         this.textBlocks.forEach(b => this.createTextBlockElement(b));
         this.draw();
     }
 
-    saveNote(name) {
-        // インデックスの読み込み
+    renameNote(name) {
+        this.noteName = name;
         let index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
-        
-        // 名前が変更された、または新規作成の場合のナンバリング処理
-        let finalName = name;
-        const getBaseName = (n) => n.replace(/\s\(\d+\)$/, '');
-        const otherNotes = index.filter(e => e.id !== this.noteId);
-        
-        let counter = 0;
-        while (otherNotes.some(e => e.name === finalName)) {
-            counter++;
-            finalName = `${name} (${counter})`;
+        const entryIdx = index.findIndex(e => e.id === this.noteId);
+        if (entryIdx !== -1) {
+            index[entryIdx].name = name;
+            localStorage.setItem('mathnote_index', JSON.stringify(index));
         }
-        this.noteName = finalName;
+    }
 
-        // IDがない場合は新規発行
-        if (!this.noteId) {
-            this.noteId = 'note_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-            // URL更新 (履歴に残さず置換)
-            const newUrl = new URL(window.location);
-            newUrl.searchParams.set('id', this.noteId);
-            window.history.replaceState({}, '', newUrl);
-        }
-
-        // ノートデータの作成
+    saveCurrentNote() {
         const noteData = {
             paths: this.paths,
             textBlocks: this.textBlocks,
@@ -1992,42 +2005,24 @@ class MathNote {
             updatedAt: Date.now()
         };
 
-        // ローカルストレージ保存
+        if (!this.noteId) {
+            this.noteId = 'note_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('id', this.noteId);
+            window.history.replaceState({}, '', newUrl);
+
+            let index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+            index.push({ id: this.noteId, name: this.noteName, tags: [], updatedAt: noteData.updatedAt });
+            localStorage.setItem('mathnote_index', JSON.stringify(index));
+        }
+
         localStorage.setItem(`mathnote_note_${this.noteId}`, JSON.stringify(noteData));
 
-        // インデックス更新
+        let index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
         const entryIdx = index.findIndex(e => e.id === this.noteId);
-        const entry = { id: this.noteId, name: this.noteName, updatedAt: noteData.updatedAt };
         if (entryIdx !== -1) {
-            index[entryIdx] = entry;
-        } else {
-            index.push(entry);
-        }
-        localStorage.setItem('mathnote_index', JSON.stringify(index));
-        
-        console.log(`Saved: ${this.noteName} (${this.noteId})`);
-    }
-
-    saveCurrentNote() {
-        // IDがある場合のみ自動保存（上書き）
-        if (this.noteId) {
-            const noteData = {
-                paths: this.paths,
-                textBlocks: this.textBlocks,
-                graphObjects: this.graphObjects,
-                shapeObjects: this.shapeObjects,
-                lineObjects: this.lineObjects,
-                updatedAt: Date.now()
-            };
-            localStorage.setItem(`mathnote_note_${this.noteId}`, JSON.stringify(noteData));
-            
-            // インデックスの日時も更新
-            let index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
-            const entryIdx = index.findIndex(e => e.id === this.noteId);
-            if (entryIdx !== -1) {
-                index[entryIdx].updatedAt = noteData.updatedAt;
-                localStorage.setItem('mathnote_index', JSON.stringify(index));
-            }
+            index[entryIdx].updatedAt = noteData.updatedAt;
+            localStorage.setItem('mathnote_index', JSON.stringify(index));
         }
     }
     resetView() { this.view = { offsetX: 0, offsetY: 0, scale: 1.0, minScale: 0.1, maxScale: 10.0 }; document.getElementById('zoom-label').innerText = '100%'; }
