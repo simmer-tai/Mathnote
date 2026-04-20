@@ -42,8 +42,7 @@ class MathNote {
         this.dragOffset = { x: 0, y: 0 };
         this.previewShape = null; this.shapeStartPos = null;
         this.previewTextBox = null; this.textStartPos = null;
-        this.editingTextId = null; // 編集中のテキストブロックID
-        this.inlineTextarea = null; // インライン編集用の隠しtextarea
+        this.editingTextId = null; this.pendingMathSize = null;
 
         // Selection tool state
         this.selectedIds = []; // { type: 'shape'|'path'|'graph', id }
@@ -69,7 +68,6 @@ class MathNote {
         this.loadNote();
         this.setupEventListeners();
         this.setupSubTooltip();
-        this.initUI();
         this.setupStorageUI();
         this.updateUIModes();
         this._dirty = true;
@@ -128,90 +126,6 @@ class MathNote {
     }
 
     wToV(wx, wy) { return { x: wx * this.view.scale + this.view.offsetX, y: wy * this.view.scale + this.view.offsetY }; }
-    vToW(vx, vy) { return { x: (vx - this.view.offsetX) / this.view.scale, y: (vy - this.view.offsetY) / this.view.scale }; }
-
-    initUI() {
-        // インライン編集用の隠しtextarea（canvas-containerに追加）
-        this.inlineTextarea = document.createElement('textarea');
-        this.inlineTextarea.id = 'inline-text-editor';
-        this.inlineTextarea.style.cssText = `
-            position: absolute;
-            opacity: 0;
-            pointer-events: none;
-            resize: none;
-            border: none;
-            outline: none;
-            background: transparent;
-            z-index: 500;
-            font-family: sans-serif;
-            overflow: hidden;
-            white-space: pre;
-        `;
-        document.getElementById('canvas-container').appendChild(this.inlineTextarea);
-    }
-
-    startTextEdit(block, isNew = false) {
-        this.editingTextId = block.id;
-        const ta = this.inlineTextarea;
-
-        // textarea をキャンバス座標 → 画面座標に変換して配置
-        const vp = this.wToV(block.x, block.y);
-        ta.value = block.content;
-        ta.style.left = `${vp.x}px`;
-        ta.style.top = `${vp.y}px`;
-        ta.style.fontSize = `${block.fontSize * this.view.scale}px`;
-        ta.style.color = block.color;
-        ta.style.width = '300px';  // 十分広く確保
-        ta.style.height = '200px';
-        ta.style.opacity = '0';      // 視覚的には非表示のままキー入力だけ受け取る
-        ta.style.pointerEvents = 'auto';
-
-        ta.focus();
-        if (isNew) ta.value = '';
-
-        // 入力のたびに再描画
-        ta._inputHandler = () => {
-            block.content = ta.value;
-            this.draw();
-        };
-        ta.addEventListener('input', ta._inputHandler);
-
-        this.draw();
-    }
-
-    commitTextEdit() {
-        if (this.editingTextId === null) return;
-        const ta = this.inlineTextarea;
-        if (ta._inputHandler) {
-            ta.removeEventListener('input', ta._inputHandler);
-            ta._inputHandler = null;
-        }
-        ta.style.pointerEvents = 'none';
-        ta.blur();
-
-        // 空なら削除
-        const block = this.textBlocks.find(b => b.id === this.editingTextId);
-        if (block && block.content.trim() === '') {
-            this.textBlocks = this.textBlocks.filter(b => b.id !== this.editingTextId);
-        }
-
-        this.editingTextId = null;
-        this.saveCurrentNote();
-        this.draw();
-    }
-
-    getTextBounds(block) {
-        const lines = block.content.split('\n');
-        const lineHeight = block.fontSize * 1.4;
-        const width = Math.max(0, ...lines.map(l => l.length)) * block.fontSize * 0.6;
-        const height = lines.length * lineHeight;
-        return { 
-            x: block.x, 
-            y: block.y, 
-            width: Math.max(width, 20), 
-            height: Math.max(height, block.fontSize) 
-        };
-    }
 
     resize() {
         const mc = document.getElementById('canvas-container').getBoundingClientRect();
@@ -310,33 +224,8 @@ class MathNote {
             ctx.fillRect(b.x, b.y, b.width, b.height);
         }
 
-        // テキストブロック描画
-        for (const b of this.textBlocks) {
-            ctx.save();
-            ctx.font = `${b.fontSize}px sans-serif`;
-            ctx.fillStyle = b.color;
-            ctx.textBaseline = 'top';
-            const lines = b.content.split('\n');
-            const lineHeight = b.fontSize * 1.4;
-            lines.forEach((line, i) => {
-                ctx.fillText(line, b.x, b.y + i * lineHeight);
-            });
-
-            // 編集中カーソル枠線
-            if (this.editingTextId === b.id) {
-                const bounds = this.getTextBounds(b);
-                ctx.strokeStyle = 'rgba(99,102,241,0.6)';
-                ctx.lineWidth = 1 / this.view.scale;
-                ctx.setLineDash([4 / this.view.scale, 3 / this.view.scale]);
-                ctx.strokeRect(bounds.x - 4 / this.view.scale, bounds.y - 2 / this.view.scale,
-                    Math.max(bounds.width + 8 / this.view.scale, 80 / this.view.scale),
-                    bounds.height + 4 / this.view.scale);
-                ctx.setLineDash([]);
-            }
-            ctx.restore();
-        }
-
         ctx.restore();
+        this.syncTextBlocks();
     }
 
     draw() {
@@ -539,9 +428,6 @@ class MathNote {
                     x: Math.min(l.x1, l.x2), y: Math.min(l.y1, l.y2),
                     width: Math.abs(l.x2 - l.x1), height: Math.abs(l.y2 - l.y1)
                 };
-            } else if (item.type === 'text') {
-                const b = this.textBlocks.find(obj => obj.id === item.id);
-                if (b) bounds = this.getTextBounds(b);
             }
             
             if (bounds) {
@@ -589,12 +475,6 @@ class MathNote {
             const maxX = Math.max(line.x1, line.x2), maxY = Math.max(line.y1, line.y2);
             if (this.rectsOverlap(rect, { x: minX, y: minY, width: maxX - minX, height: maxY - minY })) {
                 selected.push({ type: 'line', id: line.id });
-            }
-        }
-        // テキスト
-        for (const b of this.textBlocks) {
-            if (this.rectsOverlap(rect, this.getTextBounds(b))) {
-                selected.push({ type: 'text', id: b.id });
             }
         }
         return selected;
@@ -840,12 +720,10 @@ class MathNote {
         const pathIndicesToDelete = this.selectedIds.filter(i => i.type === 'path').map(i => i.id).sort((a, b) => b - a);
         const graphIdsToDelete = this.selectedIds.filter(i => i.type === 'graph').map(i => i.id);
         const lineIdsToDelete = this.selectedIds.filter(i => i.type === 'line').map(i => i.id);
-        const textIdsToDelete = this.selectedIds.filter(i => i.type === 'text').map(i => i.id);
 
         this.shapeObjects = this.shapeObjects.filter(s => !shapeIdsToDelete.includes(s.id));
         this.graphObjects = this.graphObjects.filter(g => !graphIdsToDelete.includes(g.id));
         this.lineObjects = this.lineObjects.filter(l => !lineIdsToDelete.includes(l.id));
-        this.textBlocks = this.textBlocks.filter(b => !textIdsToDelete.includes(b.id));
         
         for (const idx of pathIndicesToDelete) {
             this.paths.splice(idx, 1);
@@ -893,9 +771,6 @@ class MathNote {
 
     // --- インタラクション ---
     handlePointerDown(pos, e) {
-        if (this.editingTextId !== null && this.tool !== 'text') {
-            this.commitTextEdit();
-        }
         const isTouch = e.touches !== undefined;
         if (!isTouch && (e.button === 1 || (e.button === 0 && e.altKey))) { this.isPanning = true; this.lastMousePos = { x: e.clientX, y: e.clientY }; return; }
 
@@ -978,19 +853,6 @@ class MathNote {
                 this.updatePropertiesPanel();
                 this.draw();
             };
-
-            // テキストブロック
-            for (let i = this.textBlocks.length - 1; i >= 0; i--) {
-                const b = this.textBlocks[i];
-                const bounds = this.getTextBounds(b);
-                if (pos.x >= bounds.x && pos.x <= bounds.x + bounds.width && pos.y >= bounds.y && pos.y <= bounds.y + bounds.height) {
-                    startDrag(
-                        [{ type: 'text', id: b.id }],
-                        () => [{ type: 'text', id: b.id, snapshot: { x: b.x, y: b.y } }]
-                    );
-                    return;
-                }
-            }
 
             // 既存選択範囲内をタップ → そのままドラッグ
             const combinedBounds = this.getCombinedBounds(this.selectedIds);
@@ -1139,31 +1001,27 @@ class MathNote {
             this.selectedIds = [];
         }
         else if (this.tool === 'text') {
-            // 既存テキストブロックのシングルタップで編集
+            // 既存テキストボックスのシングルタップで編集
             for (let i = this.textBlocks.length - 1; i >= 0; i--) {
                 const b = this.textBlocks[i];
-                const bounds = this.getTextBounds(b);
-                if (pos.x >= bounds.x && pos.x <= bounds.x + bounds.width && pos.y >= bounds.y && pos.y <= bounds.y + bounds.height) {
-                    this.startTextEdit(b, false);
+                const el = document.getElementById(`block-${b.id}`);
+                if (!el) continue;
+                const w = el.offsetWidth / this.view.scale;
+                const h = el.offsetHeight / this.view.scale;
+                if (pos.x >= b.x && pos.x <= b.x + w && pos.y >= b.y && pos.y <= b.y + h) {
+                    this.pendingMathPos = { x: b.x, y: b.y };
+                    this.pendingMathSize = { width: b.width || w, height: b.height || h };
+                    this.editingTextId = b.id;
+                    document.getElementById('math-textarea').value = b.content;
+                    document.getElementById('math-input-overlay').classList.remove('hidden');
+                    document.getElementById('math-textarea').focus();
                     return;
                 }
             }
-
-            // 何もない場所をタップ → 新規テキストブロック作成＆即編集
-            if (this.editingTextId !== null) {
-                this.commitTextEdit();
-                return;
-            }
-            const newBlock = {
-                id: Date.now(),
-                x: pos.x,
-                y: pos.y,
-                content: '',
-                color: this.pen.color,
-                fontSize: 20
-            };
-            this.textBlocks.push(newBlock);
-            this.startTextEdit(newBlock, true);
+            // 新規テキストボックスのドラッグ開始
+            this.isDrawing = true;
+            this.textStartPos = pos;
+            this.previewTextBox = null;
         }
     }
 
@@ -1219,6 +1077,19 @@ class MathNote {
                 this.draw();
                 return;
             }
+        }
+
+        if (this.tool === 'text' && this.isDrawing && this.textStartPos) {
+            const w = pos.x - this.textStartPos.x;
+            const h = pos.y - this.textStartPos.y;
+            this.previewTextBox = {
+                x: w < 0 ? pos.x : this.textStartPos.x,
+                y: h < 0 ? pos.y : this.textStartPos.y,
+                width: Math.abs(w),
+                height: Math.abs(h),
+            };
+            this.draw();
+            return;
         }
 
         // Hover Detection for Selection Context UI
@@ -1315,12 +1186,6 @@ class MathNote {
                         l.x1 = item.snapshot.x1 + finalDx; l.y1 = item.snapshot.y1 + finalDy;
                         l.x2 = item.snapshot.x2 + finalDx; l.y2 = item.snapshot.y2 + finalDy;
                     }
-                } else if (item.type === 'text') {
-                    const b = this.textBlocks.find(obj => obj.id === item.id);
-                    if (b && item.snapshot) {
-                        b.x = item.snapshot.x + finalDx;
-                        b.y = item.snapshot.y + finalDy;
-                    }
                 }
             }
             this.draw();
@@ -1373,7 +1238,7 @@ class MathNote {
         }
     }
 
-    handlePointerUp(pos) {
+    handlePointerUp() {
         if (this.tool === 'line') {
             if (this.selectedLineHandle) {
                 this.selectedLineHandle = null;
@@ -1430,7 +1295,22 @@ class MathNote {
             this.resizingHandle = null; this.resizeStartShape = null; this.resizeStartPos = null; this.resizeStartObjects = null;
         }
 
+        if (this.tool === 'text' && this.isDrawing && this.textStartPos) {
+            const box = this.previewTextBox;
+            if (box && box.width > 10 && box.height > 10) {
+                this.pendingMathPos = { x: box.x, y: box.y };
+                this.pendingMathSize = { width: box.width, height: box.height };
+                this.editingTextId = null;
+                document.getElementById('math-textarea').value = '';
+                document.getElementById('math-input-overlay').classList.remove('hidden');
+                document.getElementById('math-textarea').focus();
+            }
+            this.textStartPos = null;
+            this.previewTextBox = null;
+        }
+
         this.isDrawing = false; this.currentPath = null; this.previewShape = null; this.shapeStartPos = null;
+        this.previewTextBox = null; this.textStartPos = null;
         this.isPanning = false; this.isDraggingSelection = false;
         this.dragStartPos = null; this.dragStartBounds = null; this.dragStartObjects = null;
         this.draggingGraphId = null; this.resizingGraphId = null;
@@ -1451,7 +1331,7 @@ class MathNote {
         
         add(this.canvas, 'mousedown', (e) => this.handlePointerDown(this.getPointerPos(e, this.canvas), e));
         add(this.canvas, 'mousemove', (e) => this.handlePointerMove(this.getPointerPos(e, this.canvas), e));
-        add(this.canvas, 'mouseup', (e) => this.handlePointerUp(this.getPointerPos(e, this.canvas)));
+        add(this.canvas, 'mouseup', (e) => this.handlePointerUp());
         
         add(this.canvas, 'touchstart', (e) => {
             e.preventDefault();
@@ -1471,19 +1351,7 @@ class MathNote {
             else if (e.touches.length === 2) this.handlePinch(e.touches, this.canvas);
         });
         
-        add(this.canvas, 'touchend', (e) => { 
-            e.preventDefault(); 
-            if (e.touches.length === 0) {
-                // changedTouches から座標を取得
-                const rect = this.canvas.getBoundingClientRect();
-                const ct = e.changedTouches[0];
-                const pos = { 
-                    x: (ct.clientX - rect.left - this.view.offsetX) / this.view.scale,
-                    y: (ct.clientY - rect.top - this.view.offsetY) / this.view.scale
-                };
-                this.handlePointerUp(pos); 
-            } 
-        });
+        add(this.canvas, 'touchend', (e) => { e.preventDefault(); if (e.touches.length === 0) this.handlePointerUp(); });
 
         window.addEventListener('wheel', (e) => {
             if (e.target !== this.canvas) return;
@@ -1537,24 +1405,8 @@ class MathNote {
                 btn.classList.add('active');
             });
         });
-        document.querySelectorAll('.text-color-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const color = btn.dataset.color;
-                this.pen.color = color;
-                document.querySelectorAll('.text-color-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                
-                // もし編集中のテキストがあれば、その色も変える
-                if (this.editingTextId !== null) {
-                    const block = this.textBlocks.find(b => b.id === this.editingTextId);
-                    if (block) {
-                        block.color = color;
-                        this.inlineTextarea.style.color = color;
-                        this.draw();
-                    }
-                }
-            });
-        });
+        document.getElementById('confirm-math').onclick = () => this.confirmMath();
+        document.getElementById('cancel-math').onclick = () => this.hideMathDialog();
 
         // 図形ツール関連のイベントリスナー
         document.querySelectorAll('.shape-type-btn').forEach(btn => {
@@ -1702,12 +1554,8 @@ class MathNote {
                     e.preventDefault();
                     this.deleteSelectedObjects();
                 } else if (e.key === 'Escape') {
-                    if (this.editingTextId !== null) {
-                        this.commitTextEdit();
-                    } else {
-                        this.selectedIds = [];
-                        this.updatePropertiesPanel();
-                    }
+                    this.selectedIds = [];
+                    this.updatePropertiesPanel();
                     this.draw();
                 } else if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
                     e.preventDefault();
@@ -1789,6 +1637,8 @@ class MathNote {
             }
             return;
         }
+
+        // tool === 'select' の場合はシングルタップ開始に変更したため、ここでは何もしない
     }
 
     zoomAt(centerX, centerY, factor, view) {
@@ -1803,39 +1653,34 @@ class MathNote {
     updateUIModes() {
         const subToolbar = document.getElementById('sub-toolbar');
         const shapeSubToolbar = document.getElementById('shape-sub-toolbar');
-        const textSubToolbar = document.getElementById('text-sub-toolbar');
         const canvasContainer = document.getElementById('canvas-container');
         const isPen = this.tool === 'pen';
         const isShape = this.tool === 'shape';
         const isLine = this.tool === 'line';
-        const isText = this.tool === 'text';
         const lineSubToolbar = document.getElementById('line-sub-toolbar');
 
         subToolbar.classList.toggle('visible', isPen);
         shapeSubToolbar.classList.toggle('visible', isShape);
         lineSubToolbar.classList.toggle('visible', isLine);
-        if (textSubToolbar) textSubToolbar.classList.toggle('visible', isText);
-        canvasContainer.classList.toggle('sub-open', isPen || isShape || isLine || isText);
+        canvasContainer.classList.toggle('sub-open', isPen || isShape || isLine);
 
         const selectProps = document.getElementById('select-properties');
         if (this.tool !== 'select') {
-            if (selectProps) selectProps.classList.add('hidden');
+            selectProps.classList.add('hidden');
         } else {
             this.updatePropertiesPanel();
         }
     }
 
     setTool(t) {
-        this.commitTextEdit();
+        // Clear selection when switching away from select tool
         if (t !== 'select') {
             this.selectedIds = [];
             this.resizingHandle = null;
         }
-        this.tool = t;
-        document.querySelectorAll('#toolbar button').forEach(b => b.classList.remove('active'));
-        const btn = document.getElementById(`tool-${t}`);
-        if (btn) btn.classList.add('active');
-        this.updateUIModes();
+        this.tool = t; document.querySelectorAll('#toolbar button').forEach(b => b.classList.remove('active'));
+        const btn = document.getElementById(`tool-${t}`); if(btn) btn.classList.add('active');
+        this.updateUIModes(); 
     }
 
     addGraph(pos) {
@@ -2005,7 +1850,76 @@ class MathNote {
         return { x, y };
     }
 
-
+    showMathDialog(pos) { this.pendingMathPos = pos; document.getElementById('math-input-overlay').classList.remove('hidden'); document.getElementById('math-textarea').value = ''; document.getElementById('math-textarea').focus(); }
+    hideMathDialog() { document.getElementById('math-input-overlay').classList.add('hidden'); }
+    confirmMath() {
+        const c = document.getElementById('math-textarea').value;
+        if (c.trim()) {
+            if (this.editingTextId != null) {
+                // 既存テキストブロックの編集
+                const idx = this.textBlocks.findIndex(b => b.id === this.editingTextId);
+                if (idx !== -1) {
+                    this.textBlocks[idx].content = c;
+                    const el = document.getElementById(`block-${this.editingTextId}`);
+                    if (el) el.remove();
+                    this.createTextBlockElement(this.textBlocks[idx]);
+                }
+            } else {
+                // 新規テキストブロック
+                const b = {
+                    id: Date.now(),
+                    x: this.pendingMathPos.x,
+                    y: this.pendingMathPos.y,
+                    width: this.pendingMathSize ? this.pendingMathSize.width : 200,
+                    height: this.pendingMathSize ? this.pendingMathSize.height : 100,
+                    content: c
+                };
+                this.textBlocks.push(b);
+                this.createTextBlockElement(b);
+            }
+            this.saveCurrentNote();
+        }
+        this.editingTextId = null;
+        this.pendingMathSize = null;
+        this.hideMathDialog();
+    }
+    createTextBlockElement(b) {
+        const div = document.createElement('div');
+        div.className = 'math-block';
+        div.id = `block-${b.id}`;
+        if (b.width) div.style.width = b.width + 'px';
+        if (b.height) div.style.minHeight = b.height + 'px';
+        div.style.overflow = 'hidden';
+        div.style.display = 'flex';
+        div.style.alignItems = 'center';
+        div.style.justifyContent = 'center';
+        div.style.border = '1px dashed rgba(124,111,247,0.3)';
+        div.style.borderRadius = '4px';
+        div.style.padding = '8px';
+        try {
+            katex.render(b.content, div, { throwOnError: false, displayMode: b.content.includes('$$') });
+        } catch (e) {
+            div.innerText = b.content;
+        }
+        div.oncontextmenu = (e) => {
+            e.preventDefault();
+            this.textBlocks = this.textBlocks.filter(blk => blk.id !== b.id);
+            div.remove();
+            this.saveCurrentNote();
+        };
+        div.onclick = (e) => {
+            if (this.tool === 'text') {
+                e.stopPropagation();
+                this.pendingMathPos = { x: b.x, y: b.y };
+                this.pendingMathSize = { width: b.width, height: b.height };
+                this.editingTextId = b.id;
+                document.getElementById('math-textarea').value = b.content;
+                document.getElementById('math-input-overlay').classList.remove('hidden');
+                document.getElementById('math-textarea').focus();
+            }
+        };
+        document.getElementById('canvas-container').appendChild(div);
+    }
     syncTextBlocks() {
         if (this.textBlocks.length === 0) return;
         const { offsetX, offsetY, scale } = this.view;
@@ -2063,7 +1977,11 @@ class MathNote {
         // UI同期
         const display = document.getElementById('board-title-display');
         const input = document.getElementById('board-title-input');
+        if (display) display.innerText = this.noteName;
         if (input) input.value = this.noteName;
+
+        document.querySelectorAll('.math-block').forEach(el => el.remove());
+        this.textBlocks.forEach(b => this.createTextBlockElement(b));
         this.draw();
     }
 

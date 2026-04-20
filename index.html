@@ -162,16 +162,165 @@
             </button>
         </div>
 
-        <!-- テキストツール用サブツールバー -->
-        <div id="text-sub-toolbar">
-            <div class="sub-label" style="font-size:9px;color:#888;text-align:center;width:36px;">色</div>
-            <button class="sub-btn text-color-btn active" data-color="#2b2b2b" style="--c:#2b2b2b"></button>
-            <button class="sub-btn text-color-btn" data-color="#f38ba8" style="--c:#f38ba8"></button>
-            <button class="sub-btn text-color-btn" data-color="#a6e3a1" style="--c:#a6e3a1"></button>
-            <button class="sub-btn text-color-btn" data-color="#89b4fa" style="--c:#89b4fa"></button>
-            <button class="sub-btn text-color-btn" data-color="#f9e2af" style="--c:#f9e2af"></button>
-            <button class="sub-btn text-color-btn" data-color="#cdd6f4" style="--c:#cdd6f4"></button>
+        <!-- 直線ツール用サブツールバー -->
+        <div id="line-sub-toolbar">
+            <!-- 45°スナップ -->
+            <button class="sub-btn active" id="line-snap-btn" title="45°スナップ">
+                <i data-lucide="magnet"></i>
+            </button>
+
+            <div class="sub-divider-h"></div>
+
+            <!-- 始点スタイル -->
+            <span style="font-size:9px;color:#888;text-align:center;width:36px;">始点</span>
+            <div class="cap-selector" id="start-cap-selector">
+                <button class="sub-btn cap-trigger" id="start-cap-trigger" title="始点スタイル">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <line x1="4" y1="10" x2="16" y2="10" stroke="currentColor" stroke-width="1.5" />
+                    </svg>
+                </button>
+                <div class="cap-popup" id="start-cap-popup">
+                    <button class="sub-btn line-start-btn active" data-cap="none" title="なし">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="4" y1="10" x2="16" y2="10" stroke="currentColor" stroke-width="1.5" />
+                        </svg>
+                    </button>
+                    <button class="sub-btn line-start-btn" data-cap="arrow-filled" title="矢印（塗り）">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <polyline points="16,10 4,10" stroke="currentColor" stroke-width="1.5" fill="none" />
+                            <polygon points="4,10 9,7 9,13" fill="currentColor" />
+                        </svg>
+                    </button>
+                    <button class="sub-btn line-start-btn" data-cap="arrow-open" title="矢印（線）">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="16" y1="10" x2="4" y2="10" stroke="currentColor" stroke-width="1.5" />
+                            <polyline points="8,6 4,10 8,14" stroke="currentColor" stroke-width="1.5" fill="none" />
+                        </svg>
+                    </button>
+                    <button class="sub-btn line-start-btn" data-cap="circle-filled" title="丸（塗り）">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="16" y1="10" x2="8" y2="10" stroke="currentColor" stroke-width="1.5" />
+                            <circle cx="5" cy="10" r="3" fill="currentColor" />
+                        </svg>
+                    </button>
+                    <button class="sub-btn line-start-btn" data-cap="circle-open" title="丸（空白）">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="16" y1="10" x2="8" y2="10" stroke="currentColor" stroke-width="1.5" />
+                            <circle cx="5" cy="10" r="3" stroke="currentColor" stroke-width="1.5" fill="white" />
+                        </svg>
+                    </button>
+                    <button class="sub-btn line-start-btn" data-cap="triangle" title="三角">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="16" y1="10" x2="9" y2="10" stroke="currentColor" stroke-width="1.5" />
+                            <polygon points="4,10 9,7 9,13" fill="currentColor" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="sub-divider-h"></div>
+
+            <!-- 終点スタイル -->
+            <span style="font-size:9px;color:#888;text-align:center;width:36px;">終点</span>
+            <div class="cap-selector" id="end-cap-selector">
+                <button class="sub-btn cap-trigger" id="end-cap-trigger" title="終点スタイル">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <line x1="4" y1="10" x2="12" y2="10" stroke="currentColor" stroke-width="1.5" />
+                        <polygon points="16,10 11,7 11,13" fill="currentColor" />
+                    </svg>
+                </button>
+                <div class="cap-popup" id="end-cap-popup">
+                    <button class="sub-btn line-end-btn" data-cap="none" title="なし">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="4" y1="10" x2="16" y2="10" stroke="currentColor" stroke-width="1.5" />
+                        </svg>
+                    </button>
+                    <button class="sub-btn line-end-btn active" data-cap="arrow-filled" title="矢印（塗り）">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="4" y1="10" x2="12" y2="10" stroke="currentColor" stroke-width="1.5" />
+                            <polygon points="16,10 11,7 11,13" fill="currentColor" />
+                        </svg>
+                    </button>
+                    <button class="sub-btn line-end-btn" data-cap="arrow-open" title="矢印（線）">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="4" y1="10" x2="16" y2="10" stroke="currentColor" stroke-width="1.5" />
+                            <polyline points="12,6 16,10 12,14" stroke="currentColor" stroke-width="1.5" fill="none" />
+                        </svg>
+                    </button>
+                    <button class="sub-btn line-end-btn" data-cap="circle-filled" title="丸（塗り）">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="4" y1="10" x2="12" y2="10" stroke="currentColor" stroke-width="1.5" />
+                            <circle cx="15" cy="10" r="3" fill="currentColor" />
+                        </svg>
+                    </button>
+                    <button class="sub-btn line-end-btn" data-cap="circle-open" title="丸（空白）">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="4" y1="10" x2="12" y2="10" stroke="currentColor" stroke-width="1.5" />
+                            <circle cx="15" cy="10" r="3" stroke="currentColor" stroke-width="1.5" fill="white" />
+                        </svg>
+                    </button>
+                    <button class="sub-btn line-end-btn" data-cap="triangle" title="三角">
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                            <line x1="4" y1="10" x2="11" y2="10" stroke="currentColor" stroke-width="1.5" />
+                            <polygon points="16,10 11,7 11,13" fill="currentColor" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
         </div>
+
+        <!-- ツールチップ -->
+        <div id="sub-tooltip"></div>
+
+        <!-- ワークスペース (ページ切り替えコンテナ) -->
+        <div id="workspace">
+            <!-- ボード名表示UI -->
+            <div id="board-title-container">
+                <span id="board-title-display">名称未設定</span>
+                <input id="board-title-input" type="text" value="名称未設定">
+            </div>
+
+            <!-- 右上アクションボタン -->
+            <div id="top-right-actions">
+                <button id="tool-library" title="メモ一覧へ"><i data-lucide="library"></i> 一覧</button>
+            </div>
+
+            <div id="main-view">
+                <div id="canvas-container">
+                    <canvas id="canvas"></canvas>
+                </div>
+            </div>
+
+            <div id="graph-edit-view" style="display:none; flex-direction:column; height:100vh;">
+                <!-- グラフ編集ヘッダー -->
+                <header id="graph-edit-header">
+                    <div class="edit-title">
+                        <i data-lucide="line-chart"></i>
+                        <span>グラフ詳細編集中</span>
+                    </div>
+                    <div class="edit-status">
+                        <span id="graph-zoom-label">100%</span>
+                        <button id="save-graph-btn" onclick="exitGraphEditMode()">
+                            <i data-lucide="save"></i> 保存して戻る
+                        </button>
+                    </div>
+                </header>
+                <!-- グラフキャンバス -->
+                <canvas id="graph-edit-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 数式入力用モーダル -->
+    <div id="math-input-overlay" class="hidden">
+        <div class="overlay-content">
+            <textarea id="math-textarea" placeholder="LaTeXを入力..."></textarea>
+            <div class="overlay-actions">
+                <button id="cancel-math">キャンセル</button>
+                <button id="confirm-math">確定</button>
+            </div>
+        </div>
+    </div>
 
     <script src="graph-edit.js"></script>
     <script src="app.js"></script>
