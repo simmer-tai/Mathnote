@@ -29,6 +29,16 @@
                     <i data-lucide="library" style="color: var(--primary-color);"></i>
                     MathNote ライブラリ
                 </h1>
+                <div class="search-bar-wrapper">
+                    <i data-lucide="search" class="search-icon"></i>
+                    <input
+                        type="text"
+                        id="search-input"
+                        class="search-input"
+                        placeholder="ノートを検索..."
+                        oninput="handleSearch(this.value)"
+                    />
+                </div>
                 <button class="new-note-btn" onclick="createNewNote()">
                     <i data-lucide="plus"></i> 新規ノート作成
                 </button>
@@ -57,6 +67,7 @@
 
     <script>
         let currentActiveTagId = 'all';
+        let currentSearchQuery = '';
 
         function createNewNote() {
             window.location.href = 'index.html';
@@ -139,6 +150,13 @@
             let filtered = index;
             if (activeTagId !== 'all') {
                 filtered = index.filter(note => note.tags && note.tags.includes(activeTagId));
+            }
+
+            // テキスト検索フィルタ
+            if (currentSearchQuery) {
+                filtered = filtered.filter(note =>
+                    (note.name || '').toLowerCase().includes(currentSearchQuery)
+                );
             }
 
             // 更新日時で降順ソート
@@ -232,6 +250,11 @@
             });
 
             if (window.lucide) lucide.createIcons();
+        }
+
+        function handleSearch(query) {
+            currentSearchQuery = query.trim().toLowerCase();
+            loadLibrary(currentActiveTagId);
         }
 
         function createTag() {

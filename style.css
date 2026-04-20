@@ -127,7 +127,25 @@ body, html {
     box-sizing: border-box;
 }
 
-#sub-toolbar.visible, #shape-sub-toolbar.visible {
+#text-sub-toolbar {
+    position: fixed;
+    top: 0;
+    left: 56px;
+    width: 0;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg-dark);
+    z-index: 150;
+    transition: width 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+    box-sizing: border-box;
+}
+
+#sub-toolbar.visible, #shape-sub-toolbar.visible, #text-sub-toolbar.visible {
     width: 56px;
 }
 
@@ -263,13 +281,24 @@ body, html {
     flex-shrink: 0;
 }
 
-.pen-color-btn.active {
+.pen-color-btn.active, .text-color-btn.active {
     border-color: #fff;
     box-shadow: 0 0 0 1px var(--primary-color);
 }
 
-.pen-color-btn:hover {
+.pen-color-btn:hover, .text-color-btn:hover {
     border-color: rgba(255,255,255,0.6);
+}
+
+.text-color-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    background-color: var(--c);
+    cursor: pointer;
+    transition: border-color 0.15s;
+    flex-shrink: 0;
 }
 
 /* 水平仕切り線 */
@@ -392,47 +421,9 @@ canvas {
     touch-action: none;
 }
 
-/* 数式 */
-.math-block {
-    position: absolute;
-    padding: 8px;
-    cursor: move;
-}
-
 .hidden {
     display: none !important;
 }
-
-#math-input-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.4);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 2000;
-}
-
-.overlay-content {
-    background: white;
-    padding: 24px;
-    border-radius: 12px;
-    width: 90%;
-    max-width: 500px;
-}
-
-#math-textarea { width: 100%; height: 120px; padding: 12px; margin-bottom: 20px; }
-.color-presets { display: flex; gap: 8px; }
-.color-preset { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
-.color-preset.active { border-color: #fff; box-shadow: 0 0 0 1px var(--primary-color); }
-.style-group { display: flex; gap: 4px; }
-.style-group button { width: 32px; height: 32px; border-radius: 6px; border: none; background: transparent; color: #808090; cursor: pointer; }
-.style-group button.active { color: var(--primary-color); background: rgba(124, 111, 247, 0.15); }
-.size-preview { width: 20px; height: 20px; border: 1px solid #444; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
-.size-preview::after { content: ''; display: block; background: #fff; border-radius: 50%; }
 
 .hidden-input {
     position: absolute;
@@ -652,6 +643,8 @@ canvas {
   align-items: center;
   margin-bottom: 40px;
   color: #1a1a2e;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .new-note-btn {
@@ -870,6 +863,46 @@ canvas {
 #tag-dropdown-new:hover {
   border-color: var(--primary-color);
   color: var(--primary-color);
+}
+
+/* 検索バーのスタイル */
+.search-bar-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1.5px solid #e0e0e8;
+  border-radius: 12px;
+  padding: 8px 14px;
+  flex-grow: 1;
+  max-width: 360px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  transition: all 0.2s;
+}
+
+.search-bar-wrapper:focus-within {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 12px rgba(124, 111, 247, 0.2);
+}
+
+.search-icon {
+  width: 16px;
+  height: 16px;
+  color: #999;
+  flex-shrink: 0;
+}
+
+.search-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: #1a1a2e;
+  width: 100%;
+}
+
+.search-input::placeholder {
+  color: #bbb;
 }
 
 /* Select tool properties panel */
