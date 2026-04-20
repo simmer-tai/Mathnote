@@ -56,6 +56,7 @@ class MathNote {
         this.sizeSwatchBounds = null;
         this.isHoverDelete = false;
 
+        this.pointerDownTime = 0;
         this.noteId = null;
         this.noteName = "名称未設定";
         this.init();
@@ -76,6 +77,7 @@ class MathNote {
     }
 
     setupStorageUI() {
+        console.log('setupStorageUI called');
         const display = document.getElementById('board-title-display');
         const input = document.getElementById('board-title-input');
 
@@ -111,8 +113,11 @@ class MathNote {
         const libraryBtn = document.getElementById('tool-library');
         if (libraryBtn) {
             libraryBtn.onclick = () => {
+                console.log('Library button clicked');
                 window.location.href = 'library.html';
             };
+        } else {
+            console.warn('Library button not found');
         }
     }
 
@@ -428,7 +433,11 @@ class MathNote {
                     x: Math.min(l.x1, l.x2), y: Math.min(l.y1, l.y2),
                     width: Math.abs(l.x2 - l.x1), height: Math.abs(l.y2 - l.y1)
                 };
+            } else if (item.type === 'text') {
+                const b = this.textBlocks.find(obj => obj.id === item.id);
+                if (b) bounds = { x: b.x, y: b.y, width: b.width, height: b.height };
             }
+            
             
             if (bounds) {
                 minX = Math.min(minX, bounds.x);
@@ -475,6 +484,15 @@ class MathNote {
             const maxX = Math.max(line.x1, line.x2), maxY = Math.max(line.y1, line.y2);
             if (this.rectsOverlap(rect, { x: minX, y: minY, width: maxX - minX, height: maxY - minY })) {
                 selected.push({ type: 'line', id: line.id });
+            }
+        }
+        // テキスト
+        for (const b of this.textBlocks) {
+            const el = document.getElementById(`block-${b.id}`);
+            const w = b.width || (el ? el.offsetWidth : 200);
+            const h = b.height || (el ? el.offsetHeight : 80);
+            if (this.rectsOverlap(rect, { x: b.x, y: b.y, width: w, height: h })) {
+                selected.push({ type: 'text', id: b.id });
             }
         }
         return selected;
@@ -709,6 +727,16 @@ class MathNote {
                 document.getElementById('prop-h').value = Math.round(graph.height);
                 document.querySelectorAll('.select-fill-group, .select-stroke-group, .select-line-group').forEach(el => el.classList.add('hidden'));
             }
+        } else if (item.type === 'text') {
+            label.textContent = 'テキストを選択中';
+            const b = this.textBlocks.find(obj => obj.id === item.id);
+            if (b) {
+                document.getElementById('prop-x').value = Math.round(b.x);
+                document.getElementById('prop-y').value = Math.round(b.y);
+                document.getElementById('prop-w').value = Math.round(b.width || 200);
+                document.getElementById('prop-h').value = Math.round(b.height || 80);
+                document.querySelectorAll('.select-fill-group, .select-stroke-group, .select-line-group').forEach(el => el.classList.add('hidden'));
+            }
         }
     }
 
@@ -720,11 +748,18 @@ class MathNote {
         const pathIndicesToDelete = this.selectedIds.filter(i => i.type === 'path').map(i => i.id).sort((a, b) => b - a);
         const graphIdsToDelete = this.selectedIds.filter(i => i.type === 'graph').map(i => i.id);
         const lineIdsToDelete = this.selectedIds.filter(i => i.type === 'line').map(i => i.id);
+        const textIdsToDelete = this.selectedIds.filter(i => i.type === 'text').map(i => i.id);
 
         this.shapeObjects = this.shapeObjects.filter(s => !shapeIdsToDelete.includes(s.id));
         this.graphObjects = this.graphObjects.filter(g => !graphIdsToDelete.includes(g.id));
         this.lineObjects = this.lineObjects.filter(l => !lineIdsToDelete.includes(l.id));
         
+        for (const id of textIdsToDelete) {
+            const el = document.getElementById(`block-${id}`);
+            if (el) el.remove();
+            this.textBlocks = this.textBlocks.filter(b => b.id !== id);
+        }
+
         for (const idx of pathIndicesToDelete) {
             this.paths.splice(idx, 1);
         }
@@ -875,6 +910,9 @@ class MathNote {
                     } else if (item.type === 'line') {
                         const l = this.lineObjects.find(obj => obj.id === item.id);
                         return l ? { ...item, snapshot: { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 } } : item;
+                    } else if (item.type === 'text') {
+                        const b = this.textBlocks.find(obj => obj.id === item.id);
+                        return b ? { ...item, snapshot: { x: b.x, y: b.y } } : item;
                     }
                     return item;
                 });
@@ -922,6 +960,21 @@ class MathNote {
                         startDrag(
                             [{ type: 'line', id: l.id }],
                             () => [{ type: 'line', id: l.id, snapshot: { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 } }]
+                        );
+                        return;
+                    }
+                }
+
+                // テキスト
+                for (let i = this.textBlocks.length - 1; i >= 0; i--) {
+                    const b = this.textBlocks[i];
+                    const el = document.getElementById(`block-${b.id}`);
+                    const w = b.width || (el ? el.offsetWidth : 200);
+                    const h = b.height || (el ? el.offsetHeight : 80);
+                    if (pos.x >= b.x && pos.x <= b.x + w && pos.y >= b.y && pos.y <= b.y + h) {
+                        startDrag(
+                            [{ type: 'text', id: b.id }],
+                            () => [{ type: 'text', id: b.id, snapshot: { x: b.x, y: b.y } }]
                         );
                         return;
                     }
@@ -1001,7 +1054,8 @@ class MathNote {
             this.selectedIds = [];
         }
         else if (this.tool === 'text') {
-            // 既存テキストボックスのシングルタップで編集
+            this.pointerDownTime = Date.now();
+            // 既存テキストブロックのヒットテスト
             for (let i = this.textBlocks.length - 1; i >= 0; i--) {
                 const b = this.textBlocks[i];
                 const el = document.getElementById(`block-${b.id}`);
@@ -1009,16 +1063,11 @@ class MathNote {
                 const w = el.offsetWidth / this.view.scale;
                 const h = el.offsetHeight / this.view.scale;
                 if (pos.x >= b.x && pos.x <= b.x + w && pos.y >= b.y && pos.y <= b.y + h) {
-                    this.pendingMathPos = { x: b.x, y: b.y };
-                    this.pendingMathSize = { width: b.width || w, height: b.height || h };
-                    this.editingTextId = b.id;
-                    document.getElementById('math-textarea').value = b.content;
-                    document.getElementById('math-input-overlay').classList.remove('hidden');
-                    document.getElementById('math-textarea').focus();
+                    this.enterEditMode(b.id);
                     return;
                 }
             }
-            // 新規テキストボックスのドラッグ開始
+            // ドラッグ開始フラグを立てる
             this.isDrawing = true;
             this.textStartPos = pos;
             this.previewTextBox = null;
@@ -1186,8 +1235,12 @@ class MathNote {
                         l.x1 = item.snapshot.x1 + finalDx; l.y1 = item.snapshot.y1 + finalDy;
                         l.x2 = item.snapshot.x2 + finalDx; l.y2 = item.snapshot.y2 + finalDy;
                     }
+                } else if (item.type === 'text') {
+                    const b = this.textBlocks.find(obj => obj.id === item.id);
+                    if (b) { b.x = item.snapshot.x + finalDx; b.y = item.snapshot.y + finalDy; }
                 }
             }
+            this.syncTextBlocks();
             this.draw();
             return;
         }
@@ -1296,14 +1349,22 @@ class MathNote {
         }
 
         if (this.tool === 'text' && this.isDrawing && this.textStartPos) {
+            const elapsed = Date.now() - (this.pointerDownTime || 0);
             const box = this.previewTextBox;
-            if (box && box.width > 10 && box.height > 10) {
-                this.pendingMathPos = { x: box.x, y: box.y };
-                this.pendingMathSize = { width: box.width, height: box.height };
-                this.editingTextId = null;
-                document.getElementById('math-textarea').value = '';
-                document.getElementById('math-input-overlay').classList.remove('hidden');
-                document.getElementById('math-textarea').focus();
+            const isTap = elapsed < 300 &&
+                (!box || (Math.abs(box.width) < 8 && Math.abs(box.height) < 8));
+
+            if (isTap) {
+                // シングルタップ → デフォルトサイズで即生成
+                this.createInlineTextBlock({
+                    x: this.textStartPos.x,
+                    y: this.textStartPos.y,
+                    width: 200,
+                    height: 80
+                });
+            } else if (box && box.width > 10 && box.height > 10) {
+                // ドラッグ → ドラッグサイズで生成
+                this.createInlineTextBlock(box);
             }
             this.textStartPos = null;
             this.previewTextBox = null;
@@ -1405,8 +1466,10 @@ class MathNote {
                 btn.classList.add('active');
             });
         });
-        document.getElementById('confirm-math').onclick = () => this.confirmMath();
-        document.getElementById('cancel-math').onclick = () => this.hideMathDialog();
+        const confirmMathBtn = document.getElementById('confirm-math');
+        const cancelMathBtn = document.getElementById('cancel-math');
+        if (confirmMathBtn) confirmMathBtn.onclick = () => this.confirmMath();
+        if (cancelMathBtn) cancelMathBtn.onclick = () => this.hideMathDialog();
 
         // 図形ツール関連のイベントリスナー
         document.querySelectorAll('.shape-type-btn').forEach(btn => {
@@ -1659,16 +1722,18 @@ class MathNote {
         const isLine = this.tool === 'line';
         const lineSubToolbar = document.getElementById('line-sub-toolbar');
 
-        subToolbar.classList.toggle('visible', isPen);
-        shapeSubToolbar.classList.toggle('visible', isShape);
-        lineSubToolbar.classList.toggle('visible', isLine);
-        canvasContainer.classList.toggle('sub-open', isPen || isShape || isLine);
+        if (subToolbar) subToolbar.classList.toggle('visible', isPen);
+        if (shapeSubToolbar) shapeSubToolbar.classList.toggle('visible', isShape);
+        if (lineSubToolbar) lineSubToolbar.classList.toggle('visible', isLine);
+        if (canvasContainer) canvasContainer.classList.toggle('sub-open', isPen || isShape || isLine);
 
         const selectProps = document.getElementById('select-properties');
-        if (this.tool !== 'select') {
-            selectProps.classList.add('hidden');
-        } else {
-            this.updatePropertiesPanel();
+        if (selectProps) {
+            if (this.tool !== 'select') {
+                selectProps.classList.add('hidden');
+            } else {
+                this.updatePropertiesPanel();
+            }
         }
     }
 
@@ -1680,6 +1745,12 @@ class MathNote {
         }
         this.tool = t; document.querySelectorAll('#toolbar button').forEach(b => b.classList.remove('active'));
         const btn = document.getElementById(`tool-${t}`); if(btn) btn.classList.add('active');
+
+        // 全インラインテキストエリアの pointer-events を切り替え
+        document.querySelectorAll('.text-inline-editor').forEach(ta => {
+            ta.style.pointerEvents = (t === 'text') ? 'auto' : 'none';
+        });
+
         this.updateUIModes(); 
     }
 
@@ -1850,75 +1921,146 @@ class MathNote {
         return { x, y };
     }
 
-    showMathDialog(pos) { this.pendingMathPos = pos; document.getElementById('math-input-overlay').classList.remove('hidden'); document.getElementById('math-textarea').value = ''; document.getElementById('math-textarea').focus(); }
-    hideMathDialog() { document.getElementById('math-input-overlay').classList.add('hidden'); }
-    confirmMath() {
-        const c = document.getElementById('math-textarea').value;
-        if (c.trim()) {
-            if (this.editingTextId != null) {
-                // 既存テキストブロックの編集
-                const idx = this.textBlocks.findIndex(b => b.id === this.editingTextId);
-                if (idx !== -1) {
-                    this.textBlocks[idx].content = c;
-                    const el = document.getElementById(`block-${this.editingTextId}`);
-                    if (el) el.remove();
-                    this.createTextBlockElement(this.textBlocks[idx]);
-                }
-            } else {
-                // 新規テキストブロック
-                const b = {
-                    id: Date.now(),
-                    x: this.pendingMathPos.x,
-                    y: this.pendingMathPos.y,
-                    width: this.pendingMathSize ? this.pendingMathSize.width : 200,
-                    height: this.pendingMathSize ? this.pendingMathSize.height : 100,
-                    content: c
-                };
-                this.textBlocks.push(b);
-                this.createTextBlockElement(b);
-            }
-            this.saveCurrentNote();
-        }
-        this.editingTextId = null;
-        this.pendingMathSize = null;
-        this.hideMathDialog();
+    showMathDialog(pos) { /* 廃止 */ }
+    hideMathDialog() { /* 廃止 */ }
+    confirmMath() { /* 廃止 */ }
+
+    createInlineTextBlock({ x, y, width, height }) {
+        const id = Date.now();
+        const block = { id, x, y, width: width || 200, height: height || 80, content: '' };
+        this.textBlocks.push(block);
+        this.createTextBlockElement(block, true);
+        this.triggerAutoSave ? this.triggerAutoSave() : this.saveCurrentNote();
     }
-    createTextBlockElement(b) {
+
+    createTextBlockElement(b, focusOnCreate = false) {
         const div = document.createElement('div');
-        div.className = 'math-block';
+        div.className = 'math-block' + (focusOnCreate ? ' newly-created' : '');
         div.id = `block-${b.id}`;
-        if (b.width) div.style.width = b.width + 'px';
-        if (b.height) div.style.minHeight = b.height + 'px';
-        div.style.overflow = 'hidden';
-        div.style.display = 'flex';
-        div.style.alignItems = 'center';
-        div.style.justifyContent = 'center';
-        div.style.border = '1px dashed rgba(124,111,247,0.3)';
-        div.style.borderRadius = '4px';
-        div.style.padding = '8px';
-        try {
-            katex.render(b.content, div, { throwOnError: false, displayMode: b.content.includes('$$') });
-        } catch (e) {
-            div.innerText = b.content;
-        }
-        div.oncontextmenu = (e) => {
-            e.preventDefault();
-            this.textBlocks = this.textBlocks.filter(blk => blk.id !== b.id);
-            div.remove();
-            this.saveCurrentNote();
-        };
+        div.style.width = b.width + 'px';
+        div.style.setProperty('--block-scale', this.view.scale);
+
+        const inner = document.createElement('div');
+        inner.className = 'text-block-inner';
+
+        const render = document.createElement('div');
+        render.className = 'text-render';
+        render.style.display = b.content ? 'block' : 'none';
+
+        const ta = document.createElement('textarea');
+        ta.className = 'text-inline-editor';
+        ta.style.display = b.content ? 'none' : 'block';
+        ta.style.width = '100%';
+        ta.style.minHeight = b.height + 'px';
+        ta.placeholder = "テキストを入力... (LaTeX: $数式$)";
+        ta.value = b.content;
+        ta.style.pointerEvents = (this.tool === 'text') ? 'auto' : 'none';
+
+        inner.appendChild(render);
+        inner.appendChild(ta);
+        div.appendChild(inner);
+
+        // イベント設定
         div.onclick = (e) => {
-            if (this.tool === 'text') {
+            if (this.tool === 'text' && ta.style.display === 'none') {
                 e.stopPropagation();
-                this.pendingMathPos = { x: b.x, y: b.y };
-                this.pendingMathSize = { width: b.width, height: b.height };
-                this.editingTextId = b.id;
-                document.getElementById('math-textarea').value = b.content;
-                document.getElementById('math-input-overlay').classList.remove('hidden');
-                document.getElementById('math-textarea').focus();
+                this.enterEditMode(b.id);
             }
         };
+
+        ta.onblur = () => this.exitEditMode(b.id);
+        ta.onkeydown = (e) => {
+            if (e.key === 'Escape') { ta.blur(); }
+            else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ta.blur(); }
+        };
+        ta.oninput = () => {
+            ta.style.height = 'auto';
+            ta.style.height = ta.scrollHeight + 'px';
+        };
+
         document.getElementById('canvas-container').appendChild(div);
+
+        if (b.content) {
+            this.renderTextBlock(b, div);
+        }
+
+        if (focusOnCreate) {
+            // DOMがレイアウトされてからfocus
+            requestAnimationFrame(() => {
+                const ta = div.querySelector('.text-inline-editor');
+                if (ta) {
+                    ta.style.display = 'block';
+                    const render = div.querySelector('.text-render');
+                    if (render) render.style.display = 'none';
+                    ta.focus();
+                }
+            });
+        }
+    }
+
+    enterEditMode(id) {
+        const b = this.textBlocks.find(b => b.id === id);
+        const el = document.getElementById(`block-${id}`);
+        if (!b || !el) return;
+        const render = el.querySelector('.text-render');
+        const ta = el.querySelector('.text-inline-editor');
+        render.style.display = 'none';
+        ta.style.display = 'block';
+        ta.value = b.content;
+        ta.style.height = 'auto';
+        ta.style.height = ta.scrollHeight + 'px';
+        ta.focus();
+        ta.selectionStart = ta.selectionEnd = ta.value.length;
+    }
+
+    exitEditMode(id) {
+        const b = this.textBlocks.find(b => b.id === id);
+        const el = document.getElementById(`block-${id}`);
+        if (!b || !el) return;
+        const ta = el.querySelector('.text-inline-editor');
+        const content = ta.value.trim();
+
+        if (!content) {
+            this.textBlocks = this.textBlocks.filter(t => t.id !== id);
+            el.remove();
+            this.saveCurrentNote();
+            return;
+        }
+
+        b.content = content;
+        this.renderTextBlock(b, el);
+        ta.style.display = 'none';
+        el.querySelector('.text-render').style.display = 'block';
+        this.saveCurrentNote();
+    }
+
+    renderTextBlock(b, el) {
+        const render = el.querySelector('.text-render');
+        if (!render) return;
+        
+        let html = b.content;
+        // シンプルなLaTeXパース例: $...$ または $$...$$
+        // 本格的には正規表現等で置換が必要だが、ここでは基本的な要件を満たす
+        const regex = /(\$\$[\s\S]+?\$\$|\$[\s\S]+?\$)/g;
+        const parts = html.split(regex);
+        
+        render.innerHTML = '';
+        parts.forEach(part => {
+            if (part.startsWith('$')) {
+                const isDisplay = part.startsWith('$$');
+                const formula = isDisplay ? part.slice(2, -2) : part.slice(1, -1);
+                const span = document.createElement('span');
+                try {
+                    katex.render(formula, span, { throwOnError: false, displayMode: isDisplay });
+                } catch (e) {
+                    span.innerText = part;
+                }
+                render.appendChild(span);
+            } else {
+                const textNode = document.createTextNode(part);
+                render.appendChild(textNode);
+            }
+        });
     }
     syncTextBlocks() {
         if (this.textBlocks.length === 0) return;
@@ -1948,11 +2090,21 @@ class MathNote {
         if (this.noteId) {
             const s = localStorage.getItem(`mathnote_note_${this.noteId}`);
             if (s) {
-                data = JSON.parse(s);
-                // インデックスから名前を取得
-                const index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
-                const entry = index.find(e => e.id === this.noteId);
-                if (entry) this.noteName = entry.name;
+                try {
+                    data = JSON.parse(s);
+                    // インデックスから名前を取得
+                    let index = [];
+                    try {
+                        index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+                        if (!Array.isArray(index)) index = [];
+                    } catch (e) { index = []; }
+
+                    const entry = index.find(e => e.id === this.noteId);
+                    if (entry) this.noteName = entry.name;
+                } catch (e) {
+                    console.error("ノートのロードに失敗しました:", e);
+                    data = null;
+                }
             }
         }
 
@@ -2011,14 +2163,24 @@ class MathNote {
             newUrl.searchParams.set('id', this.noteId);
             window.history.replaceState({}, '', newUrl);
 
-            let index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+            let index = [];
+            try {
+                index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+                if (!Array.isArray(index)) index = [];
+            } catch (e) { index = []; }
+            
             index.push({ id: this.noteId, name: this.noteName, tags: [], updatedAt: noteData.updatedAt });
             localStorage.setItem('mathnote_index', JSON.stringify(index));
         }
 
         localStorage.setItem(`mathnote_note_${this.noteId}`, JSON.stringify(noteData));
 
-        let index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+        let index = [];
+        try {
+            index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+            if (!Array.isArray(index)) index = [];
+        } catch (e) { index = []; }
+
         const entryIdx = index.findIndex(e => e.id === this.noteId);
         if (entryIdx !== -1) {
             index[entryIdx].updatedAt = noteData.updatedAt;

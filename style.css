@@ -403,36 +403,52 @@ canvas {
     display: none !important;
 }
 
-#math-input-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.4);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 2000;
+/* インラインテキストブロック */
+.text-block-inner {
+  position: relative;
+  min-width: 80px;
+  min-height: 32px;
 }
 
-.overlay-content {
-    background: white;
-    padding: 24px;
-    border-radius: 12px;
-    width: 90%;
-    max-width: 500px;
+.text-render {
+  padding: 6px 8px;
+  font-size: 15px;
+  color: #1a1a2e;
+  line-height: 1.6;
+  cursor: text;
+  word-break: break-word;
+  white-space: pre-wrap;
+  min-height: 32px;
 }
 
-#math-textarea { width: 100%; height: 120px; padding: 12px; margin-bottom: 20px; }
-.color-presets { display: flex; gap: 8px; }
-.color-preset { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
-.color-preset.active { border-color: #fff; box-shadow: 0 0 0 1px var(--primary-color); }
-.style-group { display: flex; gap: 4px; }
-.style-group button { width: 32px; height: 32px; border-radius: 6px; border: none; background: transparent; color: #808090; cursor: pointer; }
-.style-group button.active { color: var(--primary-color); background: rgba(124, 111, 247, 0.15); }
-.size-preview { width: 20px; height: 20px; border: 1px solid #444; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
-.size-preview::after { content: ''; display: block; background: #fff; border-radius: 50%; }
+.text-inline-editor {
+  display: none;
+  width: 100%;
+  min-height: 60px;
+  padding: 6px 8px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #1a1a2e;
+  background: rgba(255, 255, 255, 0.95);
+  border: 2px solid var(--primary-color);
+  border-radius: 4px;
+  outline: none;
+  resize: none;
+  overflow: hidden; /* auto-resizeのため */
+  box-shadow: 0 2px 12px rgba(124, 111, 247, 0.2);
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+}
+
+/* 新規作成時のアニメーション */
+.math-block.newly-created {
+  animation: block-appear 0.15s ease-out;
+}
+
+@keyframes block-appear {
+  from { opacity: 0; transform: scale(0.97) scale(var(--block-scale, 1)); }
+  to   { opacity: 1; transform: scale(1) scale(var(--block-scale, 1)); }
+}
+
 
 .hidden-input {
     position: absolute;

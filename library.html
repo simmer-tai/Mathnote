@@ -74,7 +74,14 @@
         }
 
         function initDefaultTags() {
-            const existing = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+            let existing = [];
+            try {
+                existing = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+                if (!Array.isArray(existing)) existing = [];
+            } catch (e) {
+                existing = [];
+            }
+
             const needsMigration = existing.length === 0 || existing.some(t => !t.genre);
             
             if (needsMigration) {
@@ -107,7 +114,12 @@
         }
 
         function loadTags() {
-            const tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+            let tags = [];
+            try {
+                tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+                if (!Array.isArray(tags)) tags = [];
+            } catch (e) { tags = []; }
+
             const tagList = document.getElementById('tag-list');
             
             // "すべて" 以外をクリア
@@ -141,8 +153,16 @@
         }
 
         function loadLibrary(activeTagId = 'all') {
-            const index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
-            const tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+            let index = [];
+            let tags = [];
+            try {
+                index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+                if (!Array.isArray(index)) index = [];
+                tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+                if (!Array.isArray(tags)) tags = [];
+            } catch (e) {
+                index = []; tags = [];
+            }
             const grid = document.getElementById('library-grid');
             const emptyState = document.getElementById('empty-state');
 
@@ -402,6 +422,9 @@
                 
                 dropdown.style.top = `${top}px`;
                 dropdown.style.left = `${left}px`;
+            } else {
+                // アンカーがない場合は直近の位置を維持するか、
+                // あるいは中央などに表示する（ここでは位置を固定しない）
             }
             dropdown.style.visibility = 'visible';
         }
