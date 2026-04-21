@@ -43,6 +43,7 @@ class MathNote {
         this.previewShape = null; this.shapeStartPos = null;
         this.previewTextBox = null; this.textStartPos = null;
         this.editingTextId = null; this.pendingMathSize = null;
+        this.previewTextBlockId = null; // ドラッグ中プレビュー用ID
 
         // Selection tool state
         this.selectedIds = []; // { type: 'shape'|'path'|'graph', id }
@@ -57,6 +58,7 @@ class MathNote {
         this.isHoverDelete = false;
 
         this.pointerDownTime = 0;
+        this._gridCache = null; // グリッド描画キャッシュ用
         this.noteId = null;
         this.noteName = "名称未設定";
         this.init();
@@ -138,6 +140,8 @@ class MathNote {
             this.canvas.width = mc.width;
             this.canvas.height = mc.height;
         }
+        this._gridCache = null; // サイズ変更時はキャッシュをクリア
+        this.draw();
     }
 
     _scheduleRender() {
@@ -216,17 +220,6 @@ class MathNote {
             ctx.fillRect(rx, ry, rw, rh);
             ctx.strokeRect(rx, ry, rw, rh);
             ctx.setLineDash([]);
-        }
-
-        if (this.previewTextBox) {
-            const b = this.previewTextBox;
-            ctx.strokeStyle = '#7c6ff7';
-            ctx.lineWidth = 1 / view.scale;
-            ctx.setLineDash([6 / view.scale, 4 / view.scale]);
-            ctx.strokeRect(b.x, b.y, b.width, b.height);
-            ctx.setLineDash([]);
-            ctx.fillStyle = 'rgba(124, 111, 247, 0.05)';
-            ctx.fillRect(b.x, b.y, b.width, b.height);
         }
 
         ctx.restore();
@@ -317,29 +310,89 @@ class MathNote {
 
     drawInfiniteGrid(ctx, canvas, view) {
         const gridSize = 50 * view.scale;
-        if (gridSize < 4) return; // ズームアウトしすぎたらグリッド省略
-        const offsetX = view.offsetX % gridSize;
-        const offsetY = view.offsetY % gridSize;
-        ctx.beginPath();
-        ctx.strokeStyle = '#f0f0f0';
-        ctx.lineWidth = 1;
-        for (let x = offsetX; x <= canvas.width; x += gridSize) {
-            ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
+        if (gridSize < 6) return;
+
+        const ox = view.offsetX % gridSize;
+        const oy = view.offsetY % gridSize;
+
+        // キャッシュヒット判定（倍率と画面サイズが同じなら使い回す）
+        const cache = this._gridCache;
+        if (cache && 
+            cache.scale === view.scale && 
+            cache.width === canvas.width && 
+            cache.height === canvas.height) {
+            // パン（移動）は drawImage のオフセット指定だけで完結するため非常に高速
+            ctx.drawImage(cache.canvas, ox - gridSize, oy - gridSize);
+            return;
         }
-        for (let y = offsetY; y <= canvas.height; y += gridSize) {
-            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+
+        // キャッシュ再生成（画面サイズ + 2グリッド分確保してパンに備える）
+        const cacheW = canvas.width + gridSize * 2;
+        const cacheH = canvas.height + gridSize * 2;
+        const offscreen = (typeof OffscreenCanvas !== 'undefined')
+            ? new OffscreenCanvas(cacheW, cacheH)
+            : document.createElement('canvas');
+        offscreen.width = cacheW;
+        offscreen.height = cacheH;
+        
+        const octx = offscreen.getContext('2d');
+        octx.beginPath();
+        octx.strokeStyle = '#f0f0f0';
+        octx.lineWidth = 1;
+        
+        // キャッシュ内では 0,0 基準でグリッドを描画
+        for (let x = 0; x <= cacheW; x += gridSize) {
+            octx.moveTo(Math.round(x), 0);
+            octx.lineTo(Math.round(x), cacheH);
         }
-        ctx.stroke();
+        for (let y = 0; y <= cacheH; y += gridSize) {
+            octx.moveTo(0, Math.round(y));
+            octx.lineTo(cacheW, Math.round(y));
+        }
+        octx.stroke();
+
+        this._gridCache = { 
+            canvas: offscreen, 
+            scale: view.scale, 
+            width: canvas.width, 
+            height: canvas.height 
+        };
+        ctx.drawImage(offscreen, ox - gridSize, oy - gridSize);
     }
 
     drawPath(ctx, path) {
-        if (path.points.length < 2) return;
-        ctx.beginPath(); ctx.strokeStyle = path.color; ctx.lineWidth = path.size;
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        if (path.style === 'dashed') ctx.setLineDash([12, 12]); else if (path.style === 'dotted') ctx.setLineDash([2, 8]); else ctx.setLineDash([]);
-        ctx.moveTo(path.points[0].x, path.points[0].y);
-        for (let i = 1; i < path.points.length; i++) ctx.lineTo(path.points[i].x, path.points[i].y);
-        ctx.stroke(); ctx.setLineDash([]);
+        const pts = path.points;
+        if (pts.length < 2) return;
+
+        ctx.beginPath();
+        ctx.strokeStyle = path.color;
+        ctx.lineWidth = path.size;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // スタイル設定（破線・点線）
+        if (path.style === 'dashed') ctx.setLineDash([12 / this.view.scale, 12 / this.view.scale]); 
+        else if (path.style === 'dotted') ctx.setLineDash([2 / this.view.scale, 8 / this.view.scale]); 
+        else ctx.setLineDash([]);
+
+        ctx.moveTo(pts[0].x, pts[0].y);
+        
+        if (pts.length === 2) {
+            ctx.lineTo(pts[1].x, pts[1].y);
+        } else {
+            // 三点以上ある場合は中点との間を二次ベジェ曲線でつなぐ（Smoothing）
+            for (let i = 1; i < pts.length - 1; i++) {
+                const mx = (pts[i].x + pts[i + 1].x) / 2;
+                const my = (pts[i].y + pts[i + 1].y) / 2;
+                // pts[i] を制御点、中点 mx, my を終点とする
+                ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+            }
+            // 最後の点へ直線でつなぐ
+            ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+        }
+        
+        ctx.stroke();
+        ctx.setLineDash([]);
     }
 
     drawShape(ctx, shape) {
@@ -661,6 +714,17 @@ class MathNote {
         for (let i = this.paths.length - 1; i >= 0; i--) {
             if (this.hitTestPath(this.paths[i], pos, this.view.scale)) return 'move';
         }
+        // テキストブロックホバー判定
+        for (let i = this.textBlocks.length - 1; i >= 0; i--) {
+            const b = this.textBlocks[i];
+            const el = document.getElementById(`block-${b.id}`);
+            const w = b.width || (el ? el.offsetWidth : 200);
+            const h = b.height || (el ? el.offsetHeight : 80);
+            if (pos.x >= b.x && pos.x <= b.x + w && pos.y >= b.y && pos.y <= b.y + h) {
+                return 'move';
+            }
+        }
+
         return 'default';
     }
 
@@ -972,6 +1036,14 @@ class MathNote {
                     const w = b.width || (el ? el.offsetWidth : 200);
                     const h = b.height || (el ? el.offsetHeight : 80);
                     if (pos.x >= b.x && pos.x <= b.x + w && pos.y >= b.y && pos.y <= b.y + h) {
+                        const alreadySelected = this.selectedIds.some(item => item.type === 'text' && item.id === b.id);
+                        if (alreadySelected) {
+                            // 選択中に再度クリックされた場合は編集モードへ
+                            if (el) el.style.pointerEvents = 'auto';
+                            this.enterEditMode(b.id);
+                            return;
+                        }
+
                         startDrag(
                             [{ type: 'text', id: b.id }],
                             () => [{ type: 'text', id: b.id, snapshot: { x: b.x, y: b.y } }]
@@ -1060,8 +1132,8 @@ class MathNote {
                 const b = this.textBlocks[i];
                 const el = document.getElementById(`block-${b.id}`);
                 if (!el) continue;
-                const w = el.offsetWidth / this.view.scale;
-                const h = el.offsetHeight / this.view.scale;
+                const w = el.offsetWidth;
+                const h = el.offsetHeight;
                 if (pos.x >= b.x && pos.x <= b.x + w && pos.y >= b.y && pos.y <= b.y + h) {
                     this.enterEditMode(b.id);
                     return;
@@ -1071,6 +1143,7 @@ class MathNote {
             this.isDrawing = true;
             this.textStartPos = pos;
             this.previewTextBox = null;
+            this.previewTextBlockId = null;
         }
     }
 
@@ -1129,14 +1202,33 @@ class MathNote {
         }
 
         if (this.tool === 'text' && this.isDrawing && this.textStartPos) {
-            const w = pos.x - this.textStartPos.x;
-            const h = pos.y - this.textStartPos.y;
-            this.previewTextBox = {
-                x: w < 0 ? pos.x : this.textStartPos.x,
-                y: h < 0 ? pos.y : this.textStartPos.y,
-                width: Math.abs(w),
-                height: Math.abs(h),
-            };
+            const dist = Math.hypot(pos.x - this.textStartPos.x, pos.y - this.textStartPos.y) * this.view.scale;
+            if (dist > 8) {
+                const w = Math.abs(pos.x - this.textStartPos.x);
+                const h = Math.max(40, Math.abs(pos.y - this.textStartPos.y));
+                
+                if (!this.previewTextBlockId) {
+                    this.previewTextBlockId = this.createInlineTextBlock({
+                        x: this.textStartPos.x,
+                        y: this.textStartPos.y,
+                        width: w,
+                        height: h
+                    }, false); // 最初はフォーカスしない
+                } else {
+                    const b = this.textBlocks.find(block => block.id === this.previewTextBlockId);
+                    if (b) {
+                        b.width = w;
+                        b.height = h;
+                        const el = document.getElementById(`block-${b.id}`);
+                        if (el) {
+                            el.style.width = b.width + 'px';
+                            const ta = el.querySelector('.text-inline-editor');
+                            if (ta) ta.style.minHeight = b.height + 'px';
+                        }
+                    }
+                }
+                this.syncTextBlocks(true);
+            }
             this.draw();
             return;
         }
@@ -1240,7 +1332,7 @@ class MathNote {
                     if (b) { b.x = item.snapshot.x + finalDx; b.y = item.snapshot.y + finalDy; }
                 }
             }
-            this.syncTextBlocks();
+            this.syncTextBlocks(true);
             this.draw();
             return;
         }
@@ -1349,25 +1441,20 @@ class MathNote {
         }
 
         if (this.tool === 'text' && this.isDrawing && this.textStartPos) {
-            const elapsed = Date.now() - (this.pointerDownTime || 0);
-            const box = this.previewTextBox;
-            const isTap = elapsed < 300 &&
-                (!box || (Math.abs(box.width) < 8 && Math.abs(box.height) < 8));
-
-            if (isTap) {
-                // シングルタップ → デフォルトサイズで即生成
+            if (this.previewTextBlockId) {
+                // ドラッグ確定時：フォーカスを当てる
+                this.enterEditMode(this.previewTextBlockId);
+                this.previewTextBlockId = null;
+            } else {
+                // シングルタップ時：デフォルトサイズで生成してフォーカス
                 this.createInlineTextBlock({
                     x: this.textStartPos.x,
                     y: this.textStartPos.y,
                     width: 200,
                     height: 80
-                });
-            } else if (box && box.width > 10 && box.height > 10) {
-                // ドラッグ → ドラッグサイズで生成
-                this.createInlineTextBlock(box);
+                }, true);
             }
             this.textStartPos = null;
-            this.previewTextBox = null;
         }
 
         this.isDrawing = false; this.currentPath = null; this.previewShape = null; this.shapeStartPos = null;
@@ -1710,6 +1797,7 @@ class MathNote {
         view.offsetX = centerX - cx * view.scale; view.offsetY = centerY - cy * view.scale;
         const zoomLabel = document.getElementById('zoom-label');
         if (zoomLabel) zoomLabel.innerText = `${Math.round(view.scale * 100)}%`;
+        this._gridCache = null; // 倍率変更時に再生成
         this.draw();
     }
 
@@ -1749,6 +1837,11 @@ class MathNote {
         // 全インラインテキストエリアの pointer-events を切り替え
         document.querySelectorAll('.text-inline-editor').forEach(ta => {
             ta.style.pointerEvents = (t === 'text') ? 'auto' : 'none';
+        });
+        
+        // math-block 全体の pointer-events を切り替え（セレクト時はCanvasへのイベント透過を優先）
+        document.querySelectorAll('.math-block').forEach(el => {
+            el.style.pointerEvents = (t === 'text') ? 'auto' : 'none';
         });
 
         this.updateUIModes(); 
@@ -1925,12 +2018,15 @@ class MathNote {
     hideMathDialog() { /* 廃止 */ }
     confirmMath() { /* 廃止 */ }
 
-    createInlineTextBlock({ x, y, width, height }) {
+    createInlineTextBlock({ x, y, width, height }, focusOnCreate = true) {
         const id = Date.now();
         const block = { id, x, y, width: width || 200, height: height || 80, content: '' };
         this.textBlocks.push(block);
-        this.createTextBlockElement(block, true);
-        this.triggerAutoSave ? this.triggerAutoSave() : this.saveCurrentNote();
+        this.createTextBlockElement(block, focusOnCreate);
+        if (focusOnCreate) {
+            this.triggerAutoSave ? this.triggerAutoSave() : this.saveCurrentNote();
+        }
+        return id;
     }
 
     createTextBlockElement(b, focusOnCreate = false) {
@@ -1938,6 +2034,7 @@ class MathNote {
         div.className = 'math-block' + (focusOnCreate ? ' newly-created' : '');
         div.id = `block-${b.id}`;
         div.style.width = b.width + 'px';
+        div.style.pointerEvents = (this.tool === 'text') ? 'auto' : 'none';
         div.style.setProperty('--block-scale', this.view.scale);
 
         const inner = document.createElement('div');
@@ -2029,8 +2126,18 @@ class MathNote {
 
         b.content = content;
         this.renderTextBlock(b, el);
+        
+        // 表示を確実に切り替え
         ta.style.display = 'none';
-        el.querySelector('.text-render').style.display = 'block';
+        const render = el.querySelector('.text-render');
+        if (render) render.style.display = 'block';
+        
+        
+        // セレクトツール時は要素を透過させてCanvasでドラッグできるように戻す
+        if (this.tool === 'select' && el) {
+            el.style.pointerEvents = 'none';
+        }
+
         this.saveCurrentNote();
     }
 
@@ -2062,11 +2169,11 @@ class MathNote {
             }
         });
     }
-    syncTextBlocks() {
+    syncTextBlocks(force = false) {
         if (this.textBlocks.length === 0) return;
         const { offsetX, offsetY, scale } = this.view;
-        // ビューが変化していない場合はスキップ
-        if (this._lastSyncView &&
+        // ビューが変化していない場合はスキップ（force=trueの場合は強制更新）
+        if (!force && this._lastSyncView &&
             this._lastSyncView.offsetX === offsetX &&
             this._lastSyncView.offsetY === offsetY &&
             this._lastSyncView.scale === scale) return;
