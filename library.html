@@ -552,13 +552,12 @@
             }
         };
 
-        async function syncFromFirebase() {
+        function syncFromFirebase() {
             const user = window.firebaseAuth.currentUser;
             if (!user) return;
 
             const dbRef = window.firebaseRef(window.firebaseDB);
-            try {
-                const snapshot = await window.firebaseGet(window.firebaseChild(dbRef, `users/${user.uid}/notes`));
+            window.firebaseGet(window.firebaseChild(dbRef, `users/${user.uid}/notes`)).then(snapshot => {
                 if (!snapshot.exists()) return;
 
                 const firebaseNotes = snapshot.val();
@@ -595,9 +594,9 @@
                     localStorage.setItem('mathnote_index', JSON.stringify(localIndex));
                     loadLibrary(currentActiveTagId);
                 }
-            } catch (err) {
+            }).catch(err => {
                 console.error("Library Sync Error:", err);
-            }
+            });
         }
     </script>
     <!-- Firebase SDK (ES Module) -->

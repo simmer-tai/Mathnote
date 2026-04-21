@@ -185,12 +185,14 @@ class MathNote {
         window.signOut(window.firebaseAuth).catch(err => console.error(err));
     }
 
-    async syncToFirebase() {
+    syncToFirebase() {
         const user = window.firebaseAuth.currentUser;
         if (!user || !this.noteId) return;
 
-        const localNote = JSON.parse(localStorage.getItem(`mathnote_note_${this.noteId}`));
-        const index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+        const localNoteStr = localStorage.getItem(`mathnote_note_${this.noteId}`);
+        const localNote = localNoteStr ? JSON.parse(localNoteStr) : null;
+        const indexStr = localStorage.getItem('mathnote_index') || '[]';
+        const index = JSON.parse(indexStr);
         const entry = index.find(e => e.id === this.noteId);
 
         if (!localNote || !entry) return;
@@ -211,13 +213,12 @@ class MathNote {
         window.firebaseSet(dbRef, fullNote).catch(err => console.error("Sync Up Error:", err));
     }
 
-    async syncFromFirebase() {
+    syncFromFirebase() {
         const user = window.firebaseAuth.currentUser;
         if (!user) return;
 
         const dbRef = window.firebaseRef(window.firebaseDB);
-        try {
-            const snapshot = await window.firebaseGet(window.firebaseChild(dbRef, `users/${user.uid}/notes`));
+        window.firebaseGet(window.firebaseChild(dbRef, `users/${user.uid}/notes`)).then(snapshot => {
             if (!snapshot.exists()) return;
 
             const firebaseNotes = snapshot.val();
@@ -263,10 +264,12 @@ class MathNote {
                     this.loadNote();
                 }
             }
-        } catch (err) {
+        }).catch(err => {
             console.error("Sync Down Error:", err);
-        }
+        });
     }
+
+    resize() {
         const mc = document.getElementById('canvas-container').getBoundingClientRect();
         if (mc.width > 0) {
             this.canvas.width = mc.width;
@@ -2420,6 +2423,8 @@ class MathNote {
             if (!Array.isArray(index)) index = [];
         } catch (e) { index = []; }
 
+        const entryIdx = index.findIndex(e => e.id === this.noteId);
+        if (entryIdx !== -1) {
             index[entryIdx].updatedAt = noteData.updatedAt;
             localStorage.setItem('mathnote_index', JSON.stringify(index));
         }
