@@ -72,6 +72,7 @@ class MathNote {
         this.setupEventListeners();
         this.setupSubTooltip();
         this.setupStorageUI();
+        this.setupAuth();
         this.updateUIModes();
         this._dirty = true;
         this._rafId = null;
@@ -134,7 +135,138 @@ class MathNote {
 
     wToV(wx, wy) { return { x: wx * this.view.scale + this.view.offsetX, y: wy * this.view.scale + this.view.offsetY }; }
 
-    resize() {
+    // --- Firebase Auth & Sync ---
+    setupAuth() {
+        if (!window.onAuthStateChanged) return;
+
+        const loginBtn = document.getElementById('google-login-btn');
+        const userAvatar = document.getElementById('user-avatar');
+        const userIcon = document.getElementById('user-icon');
+        const userName = document.getElementById('user-name');
+        const logoutBtn = document.getElementById('google-logout-btn');
+
+        if (loginBtn) loginBtn.onclick = () => this.loginWithGoogle();
+        if (logoutBtn) logoutBtn.onclick = () => this.logoutFromGoogle();
+        
+        if (userAvatar) {
+            userAvatar.onclick = (e) => {
+                e.stopPropagation();
+                const menu = document.getElementById('auth-menu');
+                if (menu) menu.classList.toggle('hidden');
+            };
+        }
+        window.onclick = () => {
+            const menu = document.getElementById('auth-menu');
+            if (menu) menu.classList.add('hidden');
+        };
+
+        window.onAuthStateChanged(window.firebaseAuth, (user) => {
+            if (user) {
+                if (loginBtn) loginBtn.classList.add('hidden');
+                if (userAvatar) {
+                    userAvatar.classList.remove('hidden');
+                    if (userIcon) userIcon.src = user.photoURL || '';
+                    if (userName) userName.innerText = user.displayName || 'User';
+                }
+                this.syncFromFirebase();
+            } else {
+                if (loginBtn) loginBtn.classList.remove('hidden');
+                if (userAvatar) userAvatar.classList.add('hidden');
+            }
+        });
+    }
+
+    loginWithGoogle() {
+        const provider = new window.GoogleAuthProvider();
+        window.signInWithPopup(window.firebaseAuth, provider).catch(err => console.error(err));
+    }
+
+    logoutFromGoogle() {
+        window.signOut(window.firebaseAuth).catch(err => console.error(err));
+    }
+
+    async syncToFirebase() {
+        const user = window.firebaseAuth.currentUser;
+        if (!user || !this.noteId) return;
+
+        const localNote = JSON.parse(localStorage.getItem(`mathnote_note_${this.noteId}`));
+        const index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+        const entry = index.find(e => e.id === this.noteId);
+
+        if (!localNote || !entry) return;
+
+        // 統合ノートオブジェクト作成
+        const fullNote = {
+            id: this.noteId,
+            name: entry.name,
+            data: localNote,
+            tags: entry.tags || [],
+            headerColor: entry.headerColor || null,
+            updatedAt: localNote.updatedAt,
+            // サムネイル生成（簡易版）
+            thumbnail: this.canvas.toDataURL('image/webp', 0.1)
+        };
+
+        const dbRef = window.firebaseRef(window.firebaseDB, `users/${user.uid}/notes/${this.noteId}`);
+        window.firebaseSet(dbRef, fullNote).catch(err => console.error("Sync Up Error:", err));
+    }
+
+    async syncFromFirebase() {
+        const user = window.firebaseAuth.currentUser;
+        if (!user) return;
+
+        const dbRef = window.firebaseRef(window.firebaseDB);
+        try {
+            const snapshot = await window.firebaseGet(window.firebaseChild(dbRef, `users/${user.uid}/notes`));
+            if (!snapshot.exists()) return;
+
+            const firebaseNotes = snapshot.val();
+            let localIndex = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+            if (!Array.isArray(localIndex)) localIndex = [];
+
+            let changed = false;
+
+            for (const id in firebaseNotes) {
+                const fbNote = firebaseNotes[id];
+                const localNoteStr = localStorage.getItem(`mathnote_note_${id}`);
+                const localNote = localNoteStr ? JSON.parse(localNoteStr) : null;
+
+                // マージロジック
+                if (!localNote || fbNote.updatedAt > localNote.updatedAt) {
+                    // Firebaseの方が新しい、またはローカルに存在しない
+                    localStorage.setItem(`mathnote_note_${id}`, JSON.stringify(fbNote.data));
+                    
+                    const idx = localIndex.findIndex(e => e.id === id);
+                    const entry = { 
+                        id, 
+                        name: fbNote.name, 
+                        tags: fbNote.tags || [], 
+                        updatedAt: fbNote.updatedAt,
+                        headerColor: fbNote.headerColor || null
+                    };
+                    
+                    if (idx !== -1) localIndex[idx] = entry;
+                    else localIndex.push(entry);
+                    
+                    changed = true;
+                } else if (localNote && localNote.updatedAt > fbNote.updatedAt) {
+                    // ローカルの方が新しい -> Firebaseへアップロード
+                    // (個別ノートに関しては saveCurrentNote で行われるが、一括同期時も必要ならここで行う)
+                    // 今回は個別の保存契機に任せる
+                }
+            }
+
+            if (changed) {
+                localStorage.setItem('mathnote_index', JSON.stringify(localIndex));
+                // メインボードが今のノートならリロード
+                if (this.noteId && firebaseNotes[this.noteId] && firebaseNotes[this.noteId].updatedAt > (this.updatedAt || 0)) {
+                    this.loadNote();
+                }
+            }
+        } catch (err) {
+            console.error("Sync Down Error:", err);
+        }
+    }
         const mc = document.getElementById('canvas-container').getBoundingClientRect();
         if (mc.width > 0) {
             this.canvas.width = mc.width;
@@ -2288,11 +2420,12 @@ class MathNote {
             if (!Array.isArray(index)) index = [];
         } catch (e) { index = []; }
 
-        const entryIdx = index.findIndex(e => e.id === this.noteId);
-        if (entryIdx !== -1) {
             index[entryIdx].updatedAt = noteData.updatedAt;
             localStorage.setItem('mathnote_index', JSON.stringify(index));
         }
+
+        // Firebase同期
+        this.syncToFirebase();
     }
     resetView() { this.view = { offsetX: 0, offsetY: 0, scale: 1.0, minScale: 0.1, maxScale: 10.0 }; document.getElementById('zoom-label').innerText = '100%'; }
 
