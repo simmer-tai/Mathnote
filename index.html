@@ -338,6 +338,13 @@
     </script>
     <script src="graph-edit.js"></script>
     <script src="app.js"></script>
+    <script src="storage.js"></script>
+    <script>
+      // 全スクリプト読み込み後に初期化
+      window.onload = () => {
+        new MathNote();
+      };
+    </script>
 
     <!-- Firebase SDK (ES Module) -->
     <script type="module">
