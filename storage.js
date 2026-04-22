@@ -83,6 +83,7 @@ if (typeof MathNote !== 'undefined') {
         }
 
         localStorage.setItem(`${storageKey('notes')}_${this.noteId}`, JSON.stringify(noteData));
+        localStorage.setItem(`${storageKey('notes')}_${this.noteId}_thumb`, this.canvas.toDataURL('image/webp', 0.1));
         localStorage.setItem(storageKey('index'), JSON.stringify(index));
     };
 
@@ -163,20 +164,29 @@ if (typeof MathNote !== 'undefined') {
 
         if (!localNote || !entry) return;
 
-        // 統合ノートオブジェクト作成
-        const fullNote = {
-            id: this.noteId,
-            name: entry.name,
-            data: localNote,
-            tags: entry.tags || [],
-            headerColor: entry.headerColor || null,
-            updatedAt: localNote.updatedAt,
-            // サムネイル生成（簡易版）
-            thumbnail: this.canvas.toDataURL('image/webp', 0.1)
-        };
-
+        // 差分チェック：Firebase上の既存データの updatedAt を先に取得
         const dbRef = window.firebaseRef(window.firebaseDB, `users/${user.uid}/notes/${this.noteId}`);
-        window.firebaseSet(dbRef, fullNote).catch(err => console.error("Sync Up Error:", err));
+        window.firebaseGet(dbRef).then(snapshot => {
+            if (snapshot.exists()) {
+                const fbData = snapshot.val();
+                if (fbData.updatedAt >= localNote.updatedAt) {
+                    console.log("Firebase data is up to date, skipping sync.");
+                    return;
+                }
+            }
+
+            // 統合ノートオブジェクト作成 (サムネイルなし)
+            const fullNote = {
+                id: this.noteId,
+                name: entry.name,
+                data: localNote,
+                tags: entry.tags || [],
+                headerColor: entry.headerColor || null,
+                updatedAt: localNote.updatedAt
+            };
+
+            window.firebaseSet(dbRef, fullNote).catch(err => console.error("Sync Up Error:", err));
+        }).catch(err => console.error("Firebase Get Error:", err));
     };
 
     MathNote.prototype.syncFromFirebase = function() {
@@ -201,7 +211,12 @@ if (typeof MathNote !== 'undefined') {
                 // マージロジック
                 if (!localNote || fbNote.updatedAt > localNote.updatedAt) {
                     // Firebaseの方が新しい、またはローカルに存在しない
-                    localStorage.setItem(`${storageKey('notes')}_${id}`, JSON.stringify(fbNote.data));
+                    
+                    // 過去データに thumbnail が含まれている可能性を考慮して削除
+                    const cleanData = fbNote.data ? { ...fbNote.data } : {};
+                    if (cleanData.thumbnail) delete cleanData.thumbnail;
+
+                    localStorage.setItem(`${storageKey('notes')}_${id}`, JSON.stringify(cleanData));
                     
                     const idx = localIndex.findIndex(e => e.id === id);
                     const entry = { 
