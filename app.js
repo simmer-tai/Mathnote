@@ -137,7 +137,18 @@ class MathNote {
 
     // --- Firebase Auth & Sync ---
     setupAuth() {
-        if (!window.onAuthStateChanged) return;
+        if (!window.onAuthStateChanged) {
+            // SDKロード完了を待ってリトライ
+            const retryAuth = () => {
+                if (window.onAuthStateChanged) {
+                    this.setupAuth();
+                } else {
+                    setTimeout(retryAuth, 100);
+                }
+            };
+            setTimeout(retryAuth, 100);
+            return;
+        }
 
         const loginBtn = document.getElementById('google-login-btn');
         const userAvatar = document.getElementById('user-avatar');

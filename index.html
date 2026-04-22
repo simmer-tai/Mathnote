@@ -328,6 +328,14 @@
 
 
 
+    <script>
+      (function() {
+        const params = new URLSearchParams(window.location.search);
+        if (!params.has('id')) {
+          window.location.replace('library.html');
+        }
+      })();
+    </script>
     <script src="graph-edit.js"></script>
     <script src="app.js"></script>
 

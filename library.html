@@ -518,38 +518,6 @@
             initDefaultTags();
             loadTags();
             loadLibrary();
-            
-            // Firebase Auth Setup
-            if (window.onAuthStateChanged) {
-                const loginBtn = document.getElementById('google-login-btn-lib');
-                const userAvatar = document.getElementById('user-avatar-lib');
-                const userIcon = document.getElementById('user-icon-lib');
-                const userName = document.getElementById('user-name-lib');
-                const logoutBtn = document.getElementById('logout-btn-lib');
-
-                if (loginBtn) loginBtn.onclick = () => {
-                    const provider = new window.GoogleAuthProvider();
-                    window.signInWithPopup(window.firebaseAuth, provider).catch(err => console.error(err));
-                };
-                if (logoutBtn) logoutBtn.onclick = () => {
-                    window.signOut(window.firebaseAuth).catch(err => console.error(err));
-                };
-
-                window.onAuthStateChanged(window.firebaseAuth, (user) => {
-                    if (user) {
-                        if (loginBtn) loginBtn.classList.add('hidden');
-                        if (userAvatar) {
-                            userAvatar.classList.remove('hidden');
-                            if (userIcon) userIcon.src = user.photoURL || '';
-                            if (userName) userName.innerText = user.displayName || 'User';
-                        }
-                        syncFromFirebase();
-                    } else {
-                        if (loginBtn) loginBtn.classList.remove('hidden');
-                        if (userAvatar) userAvatar.classList.add('hidden');
-                    }
-                });
-            }
         };
 
         function syncFromFirebase() {
@@ -627,6 +595,47 @@
         window.firebaseSet = set;
         window.firebaseGet = get;
         window.firebaseChild = child;
+
+        // Auth UI セットアップ（SDK確実ロード後に実行）
+        function setupLibraryAuth() {
+            const loginBtn = document.getElementById('google-login-btn-lib');
+            const userAvatar = document.getElementById('user-avatar-lib');
+            const userIcon = document.getElementById('user-icon-lib');
+            const userName = document.getElementById('user-name-lib');
+            const logoutBtn = document.getElementById('logout-btn-lib');
+
+            if (loginBtn) loginBtn.onclick = () => {
+                const provider = new GoogleAuthProvider();
+                signInWithPopup(window.firebaseAuth, provider).catch(err => console.error(err));
+            };
+            if (logoutBtn) logoutBtn.onclick = () => {
+                signOut(window.firebaseAuth).catch(err => console.error(err));
+            };
+
+            onAuthStateChanged(window.firebaseAuth, (user) => {
+                if (user) {
+                    if (loginBtn) loginBtn.classList.add('hidden');
+                    if (userAvatar) {
+                        userAvatar.classList.remove('hidden');
+                        if (userIcon) userIcon.src = user.photoURL || '';
+                        if (userName) userName.innerText = user.displayName || 'User';
+                    }
+                    if (typeof syncFromFirebase === 'function') {
+                        syncFromFirebase();
+                    }
+                } else {
+                    if (loginBtn) loginBtn.classList.remove('hidden');
+                    if (userAvatar) userAvatar.classList.add('hidden');
+                }
+            });
+        }
+
+        // DOMが既にロード済みなら即実行、未ロードならイベント待機
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupLibraryAuth);
+        } else {
+            setupLibraryAuth();
+        }
     </script>
 </body>
 </html>
