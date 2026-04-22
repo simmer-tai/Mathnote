@@ -13,7 +13,7 @@ function createNewNote() {
 function initDefaultTags() {
     let existing = [];
     try {
-        existing = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+        existing = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
         if (!Array.isArray(existing)) existing = [];
     } catch (e) {
         existing = [];
@@ -46,14 +46,14 @@ function initDefaultTags() {
         });
 
         // デフォルトタグとカスタムタグを結合して保存
-        localStorage.setItem('mathnote_tags', JSON.stringify([...defaultTags, ...customTags]));
+        localStorage.setItem(window.storageKey('tags'), JSON.stringify([...defaultTags, ...customTags]));
     }
 }
 
 function loadTags() {
     let tags = [];
     try {
-        tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+        tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
         if (!Array.isArray(tags)) tags = [];
     } catch (e) { tags = []; }
 
@@ -93,9 +93,9 @@ function loadLibrary(activeTagId = 'all') {
     let index = [];
     let tags = [];
     try {
-        index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+        index = JSON.parse(localStorage.getItem(window.storageKey('index')) || '[]');
         if (!Array.isArray(index)) index = [];
-        tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+        tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
         if (!Array.isArray(tags)) tags = [];
     } catch (e) {
         index = []; tags = [];
@@ -166,11 +166,11 @@ function loadLibrary(activeTagId = 'all') {
             colorInput.addEventListener('change', (ce) => {
                 const newColor = ce.target.value;
                 // mathnote_indexのheaderColorを更新
-                let idxData = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+                let idxData = JSON.parse(localStorage.getItem(window.storageKey('index')) || '[]');
                 const idx = idxData.findIndex(n => n.id === note.id);
                 if (idx !== -1) {
                     idxData[idx].headerColor = newColor;
-                    localStorage.setItem('mathnote_index', JSON.stringify(idxData));
+                    localStorage.setItem(window.storageKey('index'), JSON.stringify(idxData));
                 }
                 headerEl.style.background = newColor;
             });
@@ -223,7 +223,7 @@ function createTag() {
     const colors = ['#f38ba8', '#fab387', '#f9e2af', '#a6e3a1', '#89b4fa', '#cba6f7'];
     const color = colors[Math.floor(Math.random() * colors.length)];
 
-    const tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+    const tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
     const newTag = {
         id: 'tag_' + Date.now().toString(36),
         name: name.trim(),
@@ -231,7 +231,7 @@ function createTag() {
         genre: genre.trim()
     };
     tags.push(newTag);
-    localStorage.setItem('mathnote_tags', JSON.stringify(tags));
+    localStorage.setItem(window.storageKey('tags'), JSON.stringify(tags));
     loadTags();
     
     // ドロップダウンが開いていれば更新
@@ -247,11 +247,11 @@ function handleTagContextMenu(tag, e) {
     if (action === '1') {
         const newName = window.prompt('新しいタグ名', tag.name);
         if (newName) {
-            const tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+            const tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
             const idx = tags.findIndex(t => t.id === tag.id);
             if (idx !== -1) {
                 tags[idx].name = newName;
-                localStorage.setItem('mathnote_tags', JSON.stringify(tags));
+                localStorage.setItem(window.storageKey('tags'), JSON.stringify(tags));
                 loadTags();
                 loadLibrary(currentActiveTagId);
             }
@@ -264,18 +264,18 @@ function handleTagContextMenu(tag, e) {
 }
 
 function deleteTag(tagId) {
-    let tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+    let tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
     tags = tags.filter(t => t.id !== tagId);
-    localStorage.setItem('mathnote_tags', JSON.stringify(tags));
+    localStorage.setItem(window.storageKey('tags'), JSON.stringify(tags));
 
-    let index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+    let index = JSON.parse(localStorage.getItem(window.storageKey('index')) || '[]');
     index = index.map(note => {
         if (note.tags) {
             note.tags = note.tags.filter(t => t !== tagId);
         }
         return note;
     });
-    localStorage.setItem('mathnote_index', JSON.stringify(index));
+    localStorage.setItem(window.storageKey('index'), JSON.stringify(index));
 
     if (currentActiveTagId === tagId) currentActiveTagId = 'all';
     loadTags();
@@ -294,10 +294,10 @@ function showTagDropdown(noteId, anchorEl) {
 
     dropdown.dataset.currentNoteId = noteId;
 
-    const index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+    const index = JSON.parse(localStorage.getItem(window.storageKey('index')) || '[]');
     const note = index.find(n => n.id === noteId);
     const noteTags = note ? (note.tags || []) : [];
-    const tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+    const tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
 
     // ジャンルの表示順を固定
     const genreOrder = ['科目', 'ステータス', 'その他'];
@@ -367,7 +367,7 @@ function showTagDropdown(noteId, anchorEl) {
 }
 
 function toggleTagOnNote(noteId, tagId) {
-    const index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+    const index = JSON.parse(localStorage.getItem(window.storageKey('index')) || '[]');
     const noteIdx = index.findIndex(n => n.id === noteId);
     if (noteIdx === -1) return;
 
@@ -380,7 +380,7 @@ function toggleTagOnNote(noteId, tagId) {
         index[noteIdx].tags.splice(tagIdx, 1);
     }
 
-    localStorage.setItem('mathnote_index', JSON.stringify(index));
+    localStorage.setItem(window.storageKey('index'), JSON.stringify(index));
     
     // ドロップダウンをその場で更新（位置は維持）
     showTagDropdown(noteId, null);
@@ -390,11 +390,11 @@ function toggleTagOnNote(noteId, tagId) {
 
 function removeTagFromNote(noteId, tagId, e) {
     e.stopPropagation();
-    const index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+    const index = JSON.parse(localStorage.getItem(window.storageKey('index')) || '[]');
     const noteIdx = index.findIndex(n => n.id === noteId);
     if (noteIdx !== -1 && index[noteIdx].tags) {
         index[noteIdx].tags = index[noteIdx].tags.filter(t => t !== tagId);
-        localStorage.setItem('mathnote_index', JSON.stringify(index));
+        localStorage.setItem(window.storageKey('index'), JSON.stringify(index));
         
         // カードのタグバッジを更新
         updateCardTags(noteId, index[noteIdx].tags);
@@ -407,7 +407,7 @@ function removeTagFromNote(noteId, tagId, e) {
 }
 
 function updateCardTags(noteId, tagIds) {
-    const tags = JSON.parse(localStorage.getItem('mathnote_tags') || '[]');
+    const tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
     const card = document.querySelector(`.note-card[data-note-id="${noteId}"]`);
     if (!card) return;
     const tagsContainer = card.querySelector('.note-tags');
@@ -453,18 +453,18 @@ function syncFromFirebase() {
         if (!snapshot.exists()) return;
 
         const firebaseNotes = snapshot.val();
-        let localIndex = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
+        let localIndex = JSON.parse(localStorage.getItem(window.storageKey('index')) || '[]');
         if (!Array.isArray(localIndex)) localIndex = [];
 
         let changed = false;
 
         for (const id in firebaseNotes) {
             const fbNote = firebaseNotes[id];
-            const localNoteStr = localStorage.getItem(`mathnote_note_${id}`);
+            const localNoteStr = localStorage.getItem(`${window.storageKey('notes')}_${id}`);
             const localNote = localNoteStr ? JSON.parse(localNoteStr) : null;
 
             if (!localNote || fbNote.updatedAt > localNote.updatedAt) {
-                localStorage.setItem(`mathnote_note_${id}`, JSON.stringify(fbNote.data));
+                localStorage.setItem(`${window.storageKey('notes')}_${id}`, JSON.stringify(fbNote.data));
                 
                 const idx = localIndex.findIndex(e => e.id === id);
                 const entry = { 
@@ -483,7 +483,7 @@ function syncFromFirebase() {
         }
 
         if (changed) {
-            localStorage.setItem('mathnote_index', JSON.stringify(localIndex));
+            localStorage.setItem(storageKey('index'), JSON.stringify(localIndex));
             loadLibrary(currentActiveTagId);
         }
     }).catch(err => {

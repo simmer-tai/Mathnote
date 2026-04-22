@@ -69,7 +69,6 @@ class MathNote {
         this.resize();
         window.addEventListener('resize', () => this.resize());
         if (window.lucide) lucide.createIcons();
-        this.loadNote();
         this.setupEventListeners();
         this.setupSubTooltip();
         this.setupStorageUI();
@@ -117,7 +116,8 @@ class MathNote {
         const libraryBtn = document.getElementById('tool-library');
         if (libraryBtn) {
             libraryBtn.onclick = () => {
-                console.log('Library button clicked');
+                this.saveCurrentNote();   // 念のため即時保存
+                this.syncToFirebase();    // Firebaseに同期
                 window.location.href = 'library.html';
             };
         } else {

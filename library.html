@@ -78,6 +78,7 @@
         </div>
     </div>
 
+    <script src="storage.js"></script>
     <script src="library.js"></script>
     <!-- Firebase SDK (ES Module) -->
     <script type="module">
@@ -126,6 +127,9 @@
 
             onAuthStateChanged(window.firebaseAuth, (user) => {
                 if (user) {
+                    if (typeof window.migrateOldStorage === 'function') {
+                        window.migrateOldStorage(user.uid);
+                    }
                     if (loginBtn) loginBtn.classList.add('hidden');
                     if (userAvatar) {
                         userAvatar.classList.remove('hidden');
@@ -135,9 +139,19 @@
                     if (typeof syncFromFirebase === 'function') {
                         syncFromFirebase();
                     }
+                    // ログイン後はUIDが変わるため、タグとライブラリを再初期化
+                    if (typeof initDefaultTags === 'function') {
+                        initDefaultTags();
+                        loadTags();
+                        loadLibrary();
+                    }
                 } else {
                     if (loginBtn) loginBtn.classList.remove('hidden');
                     if (userAvatar) userAvatar.classList.add('hidden');
+                    // ログアウト後はゲストスコープで再描画（前ユーザーのデータを非表示に）
+                    if (typeof loadLibrary === 'function') {
+                        loadLibrary();
+                    }
                 }
             });
         }
