@@ -61,6 +61,7 @@ class MathNote {
         this._gridCache = null; // グリッド描画キャッシュ用
         this.noteId = null;
         this.noteName = "名称未設定";
+        this._saveTimer = null;
         this.init();
     }
 
@@ -311,24 +312,37 @@ class MathNote {
         ctx.scale(view.scale, view.scale);
 
         const vp = this.getViewportBounds();
+        this._drawPaths(ctx, vp);
+        this._drawShapes(ctx, vp);
+        this._drawGraphObjects(ctx, vp);
+        this._drawLineObjects(ctx, vp);
+        this._drawSelectionUI(ctx);
+
+        ctx.restore();
+        this.syncTextBlocks();
+    }
+
+    _drawPaths(ctx, vp) {
         for (const p of this.paths) {
             if (this.isPathVisible(p, vp)) this.drawPath(ctx, p);
         }
         if (this.currentPath) this.drawPath(ctx, this.currentPath);
+    }
+
+    _drawShapes(ctx, vp) {
         for (const s of this.shapeObjects) {
             if (this.isRectVisible(s.x, s.y, s.width, s.height, vp)) this.drawShape(ctx, s);
         }
         if (this.previewShape) this.drawShape(ctx, this.previewShape);
+    }
 
-        if (this.selectedIds.length > 0) {
-            const bounds = this.getCombinedBounds(this.selectedIds);
-            if (bounds) this.drawSelectionHandles(ctx, bounds);
-        }
-
+    _drawGraphObjects(ctx, vp) {
         for (const g of this.graphObjects) {
             if (this.isRectVisible(g.x, g.y, g.width, g.height, vp)) this.drawGraphObject(ctx, g);
         }
+    }
 
+    _drawLineObjects(ctx, vp) {
         for (const l of this.lineObjects) {
             if (this.isRectVisible(
                 Math.min(l.x1, l.x2), Math.min(l.y1, l.y2),
@@ -336,7 +350,16 @@ class MathNote {
             )) this.drawLineObject(ctx, l);
         }
         if (this.previewLine) this.drawLineObject(ctx, this.previewLine);
+    }
 
+    _drawSelectionUI(ctx) {
+        // 1. 選択ハンドル
+        if (this.selectedIds.length > 0) {
+            const bounds = this.getCombinedBounds(this.selectedIds);
+            if (bounds) this.drawSelectionHandles(ctx, bounds);
+        }
+
+        // 2. 直線の端点ハンドル
         if (this.tool === 'select' && this.selectedIds.some(i => i.type === 'line')) {
             for (const sel of this.selectedIds.filter(i => i.type === 'line')) {
                 const l = this.lineObjects.find(obj => obj.id === sel.id);
@@ -354,10 +377,11 @@ class MathNote {
             }
         }
 
+        // 3. ラバーバンド
         if (this.isRubberBanding) {
             ctx.strokeStyle = '#4A90E2';
-            ctx.lineWidth = 1 / view.scale;
-            ctx.setLineDash([4 / view.scale, 4 / view.scale]);
+            ctx.lineWidth = 1 / this.view.scale;
+            ctx.setLineDash([4 / this.view.scale, 4 / this.view.scale]);
             ctx.fillStyle = 'rgba(74, 144, 226, 0.1)';
             const rx = Math.min(this.rubberStart.x, this.rubberEnd.x);
             const ry = Math.min(this.rubberStart.y, this.rubberEnd.y);
@@ -367,9 +391,6 @@ class MathNote {
             ctx.strokeRect(rx, ry, rw, rh);
             ctx.setLineDash([]);
         }
-
-        ctx.restore();
-        this.syncTextBlocks();
     }
 
     draw() {
@@ -978,7 +999,7 @@ class MathNote {
         this.deleteIconBounds = null;
         this.colorSwatchBounds = null;
         this.sizeSwatchBounds = null;
-        this.saveCurrentNote();
+        this.debouncedSave();
         this.draw();
     }
 
@@ -989,7 +1010,7 @@ class MathNote {
                 if (s) s.strokeColor = color;
             }
         });
-        this.saveCurrentNote();
+        this.debouncedSave();
         this.draw();
     }
 
@@ -1000,7 +1021,7 @@ class MathNote {
                 if (s) s.lineWidth = size;
             }
         });
-        this.saveCurrentNote();
+        this.debouncedSave();
         this.draw();
     }
 
@@ -1534,7 +1555,7 @@ class MathNote {
             if (this.selectedLineHandle) {
                 this.selectedLineHandle = null;
                 this.dragLineStartSnapshot = null;
-                this.saveCurrentNote();
+                this.debouncedSave();
                 this.draw();
                 return;
             }
@@ -1557,7 +1578,7 @@ class MathNote {
                     };
                     this.lineObjects.push(newLine);
                     this.selectedIds = [{ type: 'line', id: newLine.id }];
-                    this.saveCurrentNote();
+                    this.debouncedSave();
                 }
                 this.lineStartPos = null;
                 this.previewLine = null;
@@ -1616,7 +1637,7 @@ class MathNote {
             this.updatePropertiesPanel();
         }
 
-        this.saveCurrentNote();
+        this.debouncedSave();
         this.draw();
     }
 
@@ -1758,7 +1779,7 @@ class MathNote {
                     const l = this.lineObjects.find(obj => obj.id === sel.id);
                     if (l) l.startCap = btn.dataset.cap;
                 });
-                this.saveCurrentNote();
+                this.debouncedSave();
                 this.draw();
             });
         });
@@ -1776,7 +1797,7 @@ class MathNote {
                     const l = this.lineObjects.find(obj => obj.id === sel.id);
                     if (l) l.endCap = btn.dataset.cap;
                 });
-                this.saveCurrentNote();
+                this.debouncedSave();
                 this.draw();
             });
         });
@@ -1878,7 +1899,7 @@ class MathNote {
                             }
                         }
                         this.updatePropertiesPanel();
-                        this.saveCurrentNote();
+                        this.debouncedSave();
                         this.draw();
                     }
                 }
@@ -1998,7 +2019,7 @@ class MathNote {
             id: Date.now(), x: pos.x-150, y: pos.y-150, width: 300, height: 300,
             strokes: [] // 新しい形式
         });
-        this.saveCurrentNote(); this.setTool('pen');
+        this.debouncedSave(); this.setTool('pen');
         this.draw();
     }
 
@@ -2008,8 +2029,8 @@ class MathNote {
         if (cp) cp.value = c;
         document.querySelectorAll('.pen-color-btn').forEach(b => b.classList.toggle('active', b.dataset.color === c)); 
     }
-    undo() { if (this.history.length > 0) { this.redoStack.push(JSON.stringify(this.paths)); this.paths = JSON.parse(this.history.pop()); this.saveCurrentNote(); this.draw(); } }
-    redo() { if (this.redoStack.length > 0) { this.history.push(JSON.stringify(this.paths)); this.paths = JSON.parse(this.redoStack.pop()); this.saveCurrentNote(); this.draw(); } }
+    undo() { if (this.history.length > 0) { this.redoStack.push(JSON.stringify(this.paths)); this.paths = JSON.parse(this.history.pop()); this.debouncedSave(); this.draw(); } }
+    redo() { if (this.redoStack.length > 0) { this.history.push(JSON.stringify(this.paths)); this.paths = JSON.parse(this.redoStack.pop()); this.debouncedSave(); this.draw(); } }
     saveHistory() { this.history.push(JSON.stringify(this.paths)); if (this.history.length > 50) this.history.shift(); this.redoStack = []; }
     eraseAt(pos) { const th = 12 / this.view.scale; for (let i = this.paths.length-1; i >= 0; i--) { for (let j = 0; j < this.paths[i].points.length-1; j++) { if (this.distToSegment(pos, this.paths[i].points[j], this.paths[i].points[j+1]) < th) { this.paths.splice(i, 1); break; } } } }
     
@@ -2170,7 +2191,7 @@ class MathNote {
         this.textBlocks.push(block);
         this.createTextBlockElement(block, focusOnCreate);
         if (focusOnCreate) {
-            this.triggerAutoSave ? this.triggerAutoSave() : this.saveCurrentNote();
+            this.debouncedSave();
         }
         return id;
     }
@@ -2266,7 +2287,7 @@ class MathNote {
         if (!content) {
             this.textBlocks = this.textBlocks.filter(t => t.id !== id);
             el.remove();
-            this.saveCurrentNote();
+            this.debouncedSave();
             return;
         }
 
@@ -2283,8 +2304,7 @@ class MathNote {
         if (this.tool === 'select' && el) {
             el.style.pointerEvents = 'none';
         }
-
-        this.saveCurrentNote();
+        this.debouncedSave();
     }
 
     renderTextBlock(b, el) {
@@ -2400,6 +2420,11 @@ class MathNote {
         }
     }
 
+    debouncedSave() {
+        clearTimeout(this._saveTimer);
+        this._saveTimer = setTimeout(() => this.saveCurrentNote(), 800);
+    }
+
     saveCurrentNote() {
         const noteData = {
             paths: this.paths,
@@ -2410,37 +2435,26 @@ class MathNote {
             updatedAt: Date.now()
         };
 
-        if (!this.noteId) {
-            this.noteId = 'note_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-            const newUrl = new URL(window.location);
-            newUrl.searchParams.set('id', this.noteId);
-            window.history.replaceState({}, '', newUrl);
-
-            let index = [];
-            try {
-                index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
-                if (!Array.isArray(index)) index = [];
-            } catch (e) { index = []; }
-            
-            index.push({ id: this.noteId, name: this.noteName, tags: [], updatedAt: noteData.updatedAt });
-            localStorage.setItem('mathnote_index', JSON.stringify(index));
-        }
-
-        localStorage.setItem(`mathnote_note_${this.noteId}`, JSON.stringify(noteData));
-
+        // indexを一度だけ読む
         let index = [];
         try {
             index = JSON.parse(localStorage.getItem('mathnote_index') || '[]');
             if (!Array.isArray(index)) index = [];
         } catch (e) { index = []; }
 
-        const entryIdx = index.findIndex(e => e.id === this.noteId);
-        if (entryIdx !== -1) {
-            index[entryIdx].updatedAt = noteData.updatedAt;
-            localStorage.setItem('mathnote_index', JSON.stringify(index));
+        if (!this.noteId) {
+            this.noteId = 'note_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('id', this.noteId);
+            window.history.replaceState({}, '', newUrl);
+            index.push({ id: this.noteId, name: this.noteName, tags: [], updatedAt: noteData.updatedAt });
+        } else {
+            const entryIdx = index.findIndex(e => e.id === this.noteId);
+            if (entryIdx !== -1) index[entryIdx].updatedAt = noteData.updatedAt;
         }
 
-        // Firebase同期
+        localStorage.setItem(`mathnote_note_${this.noteId}`, JSON.stringify(noteData));
+        localStorage.setItem('mathnote_index', JSON.stringify(index));
         this.syncToFirebase();
     }
     resetView() { this.view = { offsetX: 0, offsetY: 0, scale: 1.0, minScale: 0.1, maxScale: 10.0 }; document.getElementById('zoom-label').innerText = '100%'; }
