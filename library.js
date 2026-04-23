@@ -214,54 +214,235 @@ function handleSearch(query) {
     loadLibrary(currentActiveTagId);
 }
 
-function createTag() {
-    const name = window.prompt('タグ名を入力してください');
-    if (!name) return;
+// --- タグモーダル関連 ---
 
-    const genre = window.prompt('ジャンル名を入力してください（科目、ステータス、その他等）', 'その他') || 'その他';
+function openTagModalForCreate() {
+    const modal = document.getElementById('tag-modal');
+    modal.style.display = 'flex';
+    modal.dataset.mode = 'create';
+    modal.dataset.editingTagId = '';
 
-    const colors = ['#f38ba8', '#fab387', '#f9e2af', '#a6e3a1', '#89b4fa', '#cba6f7'];
-    const color = colors[Math.floor(Math.random() * colors.length)];
+    document.getElementById('tag-modal-title').innerText = 'タグを作成';
+    document.getElementById('tag-modal-name').value = '';
+    document.getElementById('tag-modal-name').readOnly = false;
+    document.getElementById('tag-modal-delete').style.display = 'none';
+    document.getElementById('tag-modal-save').innerText = '保存';
+    document.getElementById('tag-modal-save').className = 'tag-modal-btn-save';
 
-    const tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
-    const newTag = {
-        id: 'tag_' + Date.now().toString(36),
-        name: name.trim(),
-        color: color,
-        genre: genre.trim()
-    };
-    tags.push(newTag);
-    localStorage.setItem(window.storageKey('tags'), JSON.stringify(tags));
-    loadTags();
-    
-    // ドロップダウンが開いていれば更新
-    const dropdown = document.getElementById('tag-dropdown');
-    if (dropdown.style.display === 'block') {
-        const noteId = dropdown.dataset.currentNoteId;
-        showTagDropdown(noteId, null, true);
-    }
+    // ジャンル初期化
+    document.querySelectorAll('#tag-modal-genres .genre-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.genre === '科目');
+    });
+
+    initTagModalColors();
 }
 
 function handleTagContextMenu(tag, e) {
-    const action = window.prompt(`タグ「${tag.name}」の操作:\n1: 名前変更\n2: 削除\n(番号を入力してください)`);
-    if (action === '1') {
-        const newName = window.prompt('新しいタグ名', tag.name);
-        if (newName) {
-            const tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
-            const idx = tags.findIndex(t => t.id === tag.id);
-            if (idx !== -1) {
-                tags[idx].name = newName;
-                localStorage.setItem(window.storageKey('tags'), JSON.stringify(tags));
-                loadTags();
-                loadLibrary(currentActiveTagId);
-            }
-        }
-    } else if (action === '2') {
-        if (window.confirm(`タグ「${tag.name}」を削除しますか？\nこのタグはすべてのノートから外されます。`)) {
-            deleteTag(tag.id);
+    const menu = document.getElementById('tag-context-menu');
+    menu.style.display = 'block';
+    menu.dataset.contextTagId = tag.id;
+
+    let x = e.clientX;
+    let y = e.clientY;
+
+    // はみ出し防止
+    const menuWidth = 120;
+    const menuHeight = 80;
+    if (x + menuWidth > window.innerWidth) x -= menuWidth;
+    if (y + menuHeight > window.innerHeight) y -= menuHeight;
+
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+}
+
+function openTagModalForEdit() {
+    const menu = document.getElementById('tag-context-menu');
+    const tagId = menu.dataset.contextTagId;
+    menu.style.display = 'none';
+
+    const tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
+    const tag = tags.find(t => t.id === tagId);
+    if (!tag) return;
+
+    const modal = document.getElementById('tag-modal');
+    modal.style.display = 'flex';
+    modal.dataset.mode = 'edit';
+    modal.dataset.editingTagId = tagId;
+
+    document.getElementById('tag-modal-title').innerText = 'タグを編集';
+    document.getElementById('tag-modal-name').value = tag.name;
+    document.getElementById('tag-modal-name').readOnly = false;
+    document.getElementById('tag-modal-delete').style.display = 'block';
+    document.getElementById('tag-modal-save').innerText = '保存';
+    document.getElementById('tag-modal-save').className = 'tag-modal-btn-save';
+
+    // ジャンル初期化
+    document.querySelectorAll('#tag-modal-genres .genre-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.genre === (tag.genre || 'その他'));
+    });
+
+    initTagModalColors(tag.color);
+}
+
+function openTagModalForDelete() {
+    const menu = document.getElementById('tag-context-menu');
+    const tagId = menu.dataset.contextTagId;
+    menu.style.display = 'none';
+
+    const tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
+    const tag = tags.find(t => t.id === tagId);
+    if (!tag) return;
+
+    const modal = document.getElementById('tag-modal');
+    modal.style.display = 'flex';
+    modal.dataset.mode = 'delete';
+    modal.dataset.editingTagId = tagId;
+
+    document.getElementById('tag-modal-title').innerText = 'タグを削除しますか？';
+    document.getElementById('tag-modal-name').value = tag.name;
+    document.getElementById('tag-modal-name').readOnly = true;
+    document.getElementById('tag-modal-delete').style.display = 'none';
+    document.getElementById('tag-modal-save').innerText = '削除する';
+    document.getElementById('tag-modal-save').className = 'tag-modal-btn-save danger';
+
+    initTagModalColors(tag.color);
+}
+
+function confirmDeleteTagFromModal() {
+    const modal = document.getElementById('tag-modal');
+    const tagId = modal.dataset.editingTagId;
+    
+    const tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
+    const tag = tags.find(t => t.id === tagId);
+    if (!tag) return;
+
+    modal.dataset.mode = 'delete';
+    document.getElementById('tag-modal-title').innerText = 'タグを削除しますか？';
+    document.getElementById('tag-modal-name').readOnly = true;
+    document.getElementById('tag-modal-delete').style.display = 'none';
+    document.getElementById('tag-modal-save').innerText = '削除する';
+    document.getElementById('tag-modal-save').className = 'tag-modal-btn-save danger';
+}
+
+function saveTagFromModal() {
+    const modal = document.getElementById('tag-modal');
+    const mode = modal.dataset.mode;
+    const tagId = modal.dataset.editingTagId;
+
+    if (mode === 'delete') {
+        deleteTag(tagId);
+        closeTagModal();
+        return;
+    }
+
+    const name = document.getElementById('tag-modal-name').value.trim();
+    if (!name) return;
+
+    const genre = getSelectedGenre();
+    const color = getSelectedColor();
+
+    let tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');
+
+    if (mode === 'create') {
+        const newTag = {
+            id: 'tag_' + Date.now().toString(36),
+            name: name,
+            color: color,
+            genre: genre
+        };
+        tags.push(newTag);
+    } else if (mode === 'edit') {
+        const idx = tags.findIndex(t => t.id === tagId);
+        if (idx !== -1) {
+            tags[idx].name = name;
+            tags[idx].genre = genre;
+            tags[idx].color = color;
         }
     }
+
+    localStorage.setItem(window.storageKey('tags'), JSON.stringify(tags));
+    loadTags();
+    loadLibrary(currentActiveTagId);
+
+    // ドロップダウン更新
+    const dropdown = document.getElementById('tag-dropdown');
+    if (dropdown && dropdown.style.display === 'block') {
+        showTagDropdown(dropdown.dataset.currentNoteId, null, true);
+    }
+
+    closeTagModal();
 }
+
+function closeTagModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('tag-modal').style.display = 'none';
+    document.getElementById('tag-context-menu').style.display = 'none';
+}
+
+function initTagModalColors(selectedColor) {
+    const container = document.getElementById('tag-modal-colors');
+    container.innerHTML = '';
+    const presets = ['#f38ba8','#fab387','#f9e2af','#a6e3a1','#89b4fa','#cba6f7','#94e2d5','#e5c890','#81c8be','#ef9f76','#585b70','#cdd6f4'];
+    
+    if (!selectedColor) selectedColor = presets[0];
+
+    presets.forEach(color => {
+        const btn = document.createElement('button');
+        btn.className = 'color-dot-btn' + (color.toLowerCase() === selectedColor.toLowerCase() ? ' selected' : '');
+        btn.style.backgroundColor = color;
+        btn.onclick = () => selectTagModalColor(color);
+        container.appendChild(btn);
+    });
+}
+
+function selectTagModalColor(color) {
+    document.querySelectorAll('#tag-modal-colors .color-dot-btn').forEach(btn => {
+        const btnColor = rgbToHex(btn.style.backgroundColor);
+        btn.classList.toggle('selected', btnColor.toLowerCase() === color.toLowerCase());
+    });
+}
+
+function getSelectedGenre() {
+    const activeBtn = document.querySelector('#tag-modal-genres .genre-btn.active');
+    return activeBtn ? activeBtn.dataset.genre : 'その他';
+}
+
+function getSelectedColor() {
+    const activeBtn = document.querySelector('#tag-modal-colors .color-dot-btn.selected');
+    return activeBtn ? rgbToHex(activeBtn.style.backgroundColor) : '#f38ba8';
+}
+
+function rgbToHex(rgb) {
+    if (rgb.startsWith('#')) return rgb;
+    const parts = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+    if (!parts) return rgb;
+    let r = parseInt(parts[1]).toString(16).padStart(2, '0');
+    let g = parseInt(parts[2]).toString(16).padStart(2, '0');
+    let b = parseInt(parts[3]).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`;
+}
+
+// イベントリスナー設定
+document.addEventListener('DOMContentLoaded', () => {
+    // ジャンルボタンクリック
+    const genreContainer = document.getElementById('tag-modal-genres');
+    if (genreContainer) {
+        genreContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('genre-btn')) {
+                document.querySelectorAll('#tag-modal-genres .genre-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+            }
+        });
+    }
+
+    // コンテキストメニュー外クリックで閉じる
+    document.addEventListener('click', (e) => {
+        const menu = document.getElementById('tag-context-menu');
+        if (menu && menu.style.display === 'block' && !menu.contains(e.target)) {
+            menu.style.display = 'none';
+        }
+    });
+});
 
 function deleteTag(tagId) {
     let tags = JSON.parse(localStorage.getItem(window.storageKey('tags')) || '[]');

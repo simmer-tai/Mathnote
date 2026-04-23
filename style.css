@@ -1023,3 +1023,258 @@ canvas {
 .delete-btn:hover {
   opacity: 0.85;
 }
+
+/* --- タグモーダル・コンテキストメニュー --- */
+
+.tag-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.tag-modal-box {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 28px;
+  width: 340px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+.tag-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin: 0 0 4px 0;
+}
+
+.tag-modal-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: -6px;
+}
+
+.tag-modal-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px solid #e0e0e8;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.tag-modal-input:focus {
+  border-color: var(--primary-color);
+}
+
+.tag-modal-input:read-only {
+    background: #f9f9f9;
+    color: #666;
+}
+
+.tag-modal-genres {
+  display: flex; gap: 8px;
+}
+
+.genre-btn {
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+/* 非アクティブ */
+.genre-btn:not(.active) {
+  border: 1.5px solid #e0e0e8;
+  background: white;
+  color: #555;
+}
+
+.genre-btn.active {
+  background: var(--primary-color);
+  color: white;
+  border-color: transparent;
+}
+
+.tag-modal-colors {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+
+/* カラードットボタン */
+.color-dot-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2.5px solid transparent;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.color-dot-btn:hover {
+  transform: scale(1.15);
+}
+
+.color-dot-btn.selected {
+  border-color: #333;
+  box-shadow: 0 0 0 2px white inset;
+}
+
+.tag-modal-actions {
+  display: flex; align-items: center; gap: 8px; margin-top: 4px;
+}
+
+.tag-modal-btn-cancel {
+  background: white;
+  border: 1.5px solid #e0e0e8;
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #555;
+}
+
+.tag-modal-btn-save {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.tag-modal-btn-save.danger {
+    background: #e74c3c;
+}
+
+.tag-modal-btn-delete {
+  background: transparent;
+  color: #e74c3c;
+  border: none;
+  padding: 8px 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tag-modal-btn-delete:hover {
+    text-decoration: underline;
+}
+
+/* タグコンテキストメニュー */
+.tag-context-menu {
+  position: fixed;
+  background: white;
+  border: 1px solid #e0e0e8;
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  z-index: 10001;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+}
+
+.tag-context-menu button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.tag-context-menu button:hover {
+  background: #f0f0f6;
+}
+
+.tag-context-menu button.danger {
+  color: #e74c3c;
+}
+
+/* --- ラジアルメニュー --- */
+#radial-menu {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    width: 0;
+    height: 0;
+}
+
+#radial-menu:not(.hidden) {
+    pointer-events: all;
+}
+
+.radial-item {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(30, 30, 40, 0.92);
+    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.75);
+    transform: translate(-50%, -50%);
+    transition: background 0.12s, transform 0.12s;
+    pointer-events: none;
+}
+
+.radial-item.active {
+    background: rgba(99, 102, 241, 0.85);
+    transform: translate(-50%, -50%) scale(1.18);
+    color: #ffffff;
+}
+
+.radial-center {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    transform: translate(-50%, -50%);
+}
+
+/* 表示アニメーション */
+@keyframes radial-appear {
+    from { transform: translate(-50%, -50%) scale(0.6); opacity: 0; }
+    to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+#radial-menu:not(.hidden) .radial-item {
+    animation: radial-appear 180ms ease-out forwards;
+}
+
+/* --- 長押し進捗インジケーター --- */
+#radial-progress {
+    position: fixed;
+    width: 88px;
+    height: 88px;
+    z-index: 9998;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    pointer-events: none;
+}
+
+.radial-progress-track {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.12);
+    stroke-width: 2.5;
+}
+
+.radial-progress-fill {
+    fill: none;
+    stroke: rgba(99, 102, 241, 0.9);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-dasharray: 226;
+    stroke-dashoffset: 226;
+    transition: stroke-dashoffset 0.05s linear;
+}

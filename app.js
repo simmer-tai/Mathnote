@@ -62,6 +62,17 @@ class MathNote {
         this.noteId = null;
         this.noteName = "名称未設定";
         this._saveTimer = null;
+
+        // Radial Tool Menu state
+        this._radialTimer = null;
+        this._radialActive = false;
+        this._radialOrigin = null; // {x, y} in client coords
+        this._radialHovered = null; // tool name
+        this._radialProgressInterval = null;
+        this._radialProgressValue = 0;
+        this._radialProgressDelay = null;
+        this._radialJustSwitched = false;
+
         this.init();
     }
 
@@ -555,7 +566,94 @@ class MathNote {
     }
 
     resetView() { this.view = { offsetX: 0, offsetY: 0, scale: 1.0, minScale: 0.1, maxScale: 10.0 }; document.getElementById('zoom-label').innerText = '100%'; }
+
+    // --- Radial Menu Methods ---
+    initRadialMenuPositions() {
+        const RADIUS = 64;
+        const RADIAL_TOOLS = [
+            { tool: 'pen',    angle: -90 },
+            { tool: 'select', angle: -18 },
+            { tool: 'shape',  angle:  54 },
+            { tool: 'eraser', angle: 126 },
+            { tool: 'line',   angle: 198 },
+        ];
+        RADIAL_TOOLS.forEach(item => {
+            const el = document.querySelector(`.radial-item[data-tool="${item.tool}"]`);
+            if (el) {
+                const rad = item.angle * Math.PI / 180;
+                el.style.left = (Math.cos(rad) * RADIUS) + 'px';
+                el.style.top = (Math.sin(rad) * RADIUS) + 'px';
+            }
+        });
+    }
+
+    showRadialMenu(cx, cy) {
+        if (this._radialActive) return;
+        this._radialActive = true;
+        this._radialOrigin = { x: cx, y: cy };
+        this._radialHovered = null;
+
+        const menu = document.getElementById('radial-menu');
+        menu.style.left = cx + 'px';
+        menu.style.top = cy + 'px';
+        menu.classList.remove('hidden');
+
+        if (window.lucide) lucide.createIcons();
+
+        this.initRadialMenuPositions();
+        this.updateRadialHighlight();
+
+        // バイブレーション（対応端末のみ）
+        if (navigator.vibrate) navigator.vibrate(10);
+    }
+
+    hideRadialMenu() {
+        if (!this._radialActive) return;
+        this._radialActive = false;
+        document.getElementById('radial-menu').classList.add('hidden');
+        if (this._radialHovered) {
+            this.setTool(this._radialHovered);
+            this._radialJustSwitched = true;
+        }
+        this._radialHovered = null;
+    }
+
+    updateRadialHighlight() {
+        document.querySelectorAll('.radial-item').forEach(el => {
+            el.classList.toggle('active', el.dataset.tool === this._radialHovered);
+        });
+    }
+
+    showRadialProgress(cx, cy) {
+        const progress = document.getElementById('radial-progress');
+        if (!progress) return;
+
+        progress.style.left = cx + 'px';
+        progress.style.top = cy + 'px';
+        progress.classList.remove('hidden');
+
+        this._radialProgressValue = 0.6; // 300ms経過した状態から開始
+        const fill = progress.querySelector('.radial-progress-fill');
+        if (fill) fill.style.strokeDashoffset = 226 * (1 - this._radialProgressValue);
+
+        clearInterval(this._radialProgressInterval);
+        this._radialProgressInterval = setInterval(() => {
+            this._radialProgressValue += 16 / 500;
+            if (this._radialProgressValue >= 1) {
+                this._radialProgressValue = 1;
+                clearInterval(this._radialProgressInterval);
+            }
+            if (fill) fill.style.strokeDashoffset = 226 * (1 - this._radialProgressValue);
+        }, 16);
+    }
+
+    hideRadialProgress() {
+        clearInterval(this._radialProgressInterval);
+        const progress = document.getElementById('radial-progress');
+        if (progress) progress.classList.add('hidden');
+    }
 }
+
 
 // MathNote クラス定義はここまで
 // 初期化は index.html 側で全スクリプト読み込み後に行う

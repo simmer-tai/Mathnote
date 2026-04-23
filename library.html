@@ -19,7 +19,7 @@
                 </li>
                 <!-- タグが動的に追加される -->
             </ul>
-            <button id="create-tag-btn" onclick="createTag()">＋ タグを作成</button>
+            <button id="create-tag-btn" onclick="openTagModalForCreate()">＋ タグを作成</button>
         </aside>
 
         <!-- 右メインエリア -->
@@ -74,7 +74,7 @@
             <!-- ジャンルごとのカラムが動的生成される -->
         </div>
         <div class="tag-dropdown-footer">
-            <button id="tag-dropdown-new" onclick="createTag()">＋ 新規タグ作成</button>
+            <button id="tag-dropdown-new" onclick="openTagModalForCreate()">＋ 新規タグ作成</button>
         </div>
     </div>
 
@@ -163,5 +163,45 @@
             setupLibraryAuth();
         }
     </script>
+
+    <!-- タグ作成・編集モーダル -->
+    <div id="tag-modal" class="tag-modal-backdrop" style="display:none;" onclick="closeTagModal(event)">
+      <div class="tag-modal-box" onclick="event.stopPropagation()">
+        <h3 id="tag-modal-title" class="tag-modal-title">タグを作成</h3>
+    
+        <!-- タグ名 -->
+        <label class="tag-modal-label">タグ名</label>
+        <input id="tag-modal-name" class="tag-modal-input" type="text" placeholder="タグ名を入力" maxlength="20" />
+    
+        <!-- ジャンル選択 -->
+        <label class="tag-modal-label">ジャンル</label>
+        <div class="tag-modal-genres" id="tag-modal-genres">
+          <button class="genre-btn active" data-genre="科目">科目</button>
+          <button class="genre-btn" data-genre="ステータス">ステータス</button>
+          <button class="genre-btn" data-genre="その他">その他</button>
+        </div>
+    
+        <!-- カラー選択 -->
+        <label class="tag-modal-label">カラー</label>
+        <div class="tag-modal-colors" id="tag-modal-colors">
+          <!-- JSで生成 -->
+        </div>
+    
+        <!-- ボタン行 -->
+        <div class="tag-modal-actions">
+          <button id="tag-modal-delete" class="tag-modal-btn-delete" onclick="confirmDeleteTagFromModal()" style="display:none;">削除</button>
+          <div style="flex:1"></div>
+          <button class="tag-modal-btn-cancel" onclick="closeTagModal()">キャンセル</button>
+          <button id="tag-modal-save" class="tag-modal-btn-save" onclick="saveTagFromModal()">保存</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- タグ右クリックコンテキストメニュー -->
+    <div id="tag-context-menu" class="tag-context-menu" style="display:none;">
+      <button onclick="openTagModalForEdit()">編集</button>
+      <button class="danger" onclick="openTagModalForDelete()">削除</button>
+    </div>
+
 </body>
 </html>

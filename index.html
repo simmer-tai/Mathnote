@@ -309,8 +309,32 @@
                 <!-- グラフキャンバス -->
                 <canvas id="graph-edit-canvas"></canvas>
             </div>
+        <!-- 長押し進捗インジケーター -->
+        <svg id="radial-progress" class="hidden" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg">
+          <circle class="radial-progress-track" cx="44" cy="44" r="36"/>
+          <circle class="radial-progress-fill" cx="44" cy="44" r="36"/>
+        </svg>
+
+        <!-- ラジアルメニュー -->
+        <div id="radial-menu" class="radial-menu hidden">
+          <div class="radial-item" data-tool="pen">
+            <i data-lucide="pencil"></i>
+          </div>
+          <div class="radial-item" data-tool="select">
+            <i data-lucide="mouse-pointer-2"></i>
+          </div>
+          <div class="radial-item" data-tool="shape">
+            <i data-lucide="square"></i>
+          </div>
+          <div class="radial-item" data-tool="eraser">
+            <i data-lucide="eraser"></i>
+          </div>
+          <div class="radial-item" data-tool="line">
+            <i data-lucide="minus"></i>
+          </div>
+          <div class="radial-center"></div>
         </div>
-    </div>
+    </div><!-- #app -->
 
 
 
@@ -364,6 +388,8 @@
         window.firebaseGet = get;
         window.firebaseChild = child;
     </script>
+
+
 </body>
 
 </html>

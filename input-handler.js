@@ -530,6 +530,10 @@ MathNote.prototype.handlePointerMove = function(pos, e) {
 };
 
 MathNote.prototype.handlePointerUp = function() {
+    if (this._radialJustSwitched) {
+        this._radialJustSwitched = false;
+        return;
+    }
     if (this.tool === 'line') {
         if (this.selectedLineHandle) {
             this.selectedLineHandle = null;
@@ -658,12 +662,33 @@ MathNote.prototype.setupEventListeners = function() {
     add(this.canvas, 'mousemove', (e) => this.handlePointerMove(this.getPointerPos(e, this.canvas), e));
     add(this.canvas, 'mouseup', (e) => this.handlePointerUp());
     
+
     add(this.canvas, 'touchstart', (e) => {
         e.preventDefault();
         if (e.touches.length === 1) {
-            const pos = this.getPointerPos(e, this.canvas); this.handlePointerDown(pos, e);
+            const touch = e.touches[0];
+            const pos = this.getPointerPos(e, this.canvas);
+            
+            // ラジアルメニュー長押しタイマー (描画中でない場合のみ)
+            if (!this.isDrawing) {
+                this._radialStartPos = { x: touch.clientX, y: touch.clientY };
+                clearTimeout(this._radialTimer);
+                clearTimeout(this._radialProgressDelay);
+                this._radialProgressDelay = setTimeout(() => {
+                    this.showRadialProgress(touch.clientX, touch.clientY);
+                }, 300);
+                this._radialTimer = setTimeout(() => {
+                    this.hideRadialProgress();
+                    this.showRadialMenu(touch.clientX, touch.clientY);
+                }, 500);
+            }
+
+            this.handlePointerDown(pos, e);
             const now = Date.now(); if (now - this.lastTapTime < 300) { this.onDoubleTap(pos); } this.lastTapTime = now;
         } else if (e.touches.length === 2) {
+            clearTimeout(this._radialTimer);
+            clearTimeout(this._radialProgressDelay);
+            this.hideRadialProgress();
             this.isDrawing = false; this.isPanning = false;
             this.lastPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             this.lastPinchCenter = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2, y: (e.touches[0].clientY + e.touches[1].clientY) / 2 };
@@ -672,11 +697,79 @@ MathNote.prototype.setupEventListeners = function() {
     
     add(this.canvas, 'touchmove', (e) => {
         e.preventDefault();
-        if (e.touches.length === 1) this.handlePointerMove(this.getPointerPos(e, this.canvas), e);
-        else if (e.touches.length === 2) this.handlePinch(e.touches, this.canvas);
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            
+            if (this._radialActive) {
+                // ラジアルメニュー操作中
+                const dx = touch.clientX - this._radialOrigin.x;
+                const dy = touch.clientY - this._radialOrigin.y;
+                const dist = Math.hypot(dx, dy);
+
+                if (dist < 12) {
+                    this._radialHovered = null;
+                } else {
+                    // 角度から最寄りのツールを判定
+                    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                    const RADIAL_TOOLS = [
+                        { tool: 'pen',    angle: -90 },
+                        { tool: 'select', angle: -18 },
+                        { tool: 'shape',  angle:  54 },
+                        { tool: 'eraser', angle: 126 },
+                        { tool: 'line',   angle: 198 },
+                    ];
+                    
+                    let minDiff = Infinity;
+                    let bestTool = null;
+                    RADIAL_TOOLS.forEach(item => {
+                        let diff = Math.abs(angle - item.angle);
+                        if (diff > 180) diff = 360 - diff;
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            bestTool = item.tool;
+                        }
+                    });
+                    this._radialHovered = bestTool;
+                }
+                this.updateRadialHighlight();
+            } else {
+                // 通常操作時、一定以上の移動があれば長押しをキャンセル
+                if (this._radialStartPos) {
+                    const dist = Math.hypot(touch.clientX - this._radialStartPos.x, touch.clientY - this._radialStartPos.y);
+                    if (dist > 10) {
+                        clearTimeout(this._radialTimer);
+                        clearTimeout(this._radialProgressDelay);
+                        this.hideRadialProgress();
+                    }
+                }
+                this.handlePointerMove(this.getPointerPos(e, this.canvas), e);
+            }
+        } else if (e.touches.length === 2) {
+            clearTimeout(this._radialTimer);
+            clearTimeout(this._radialProgressDelay);
+            this.hideRadialProgress();
+            this.handlePinch(e.touches, this.canvas);
+        }
     });
     
-    add(this.canvas, 'touchend', (e) => { e.preventDefault(); if (e.touches.length === 0) this.handlePointerUp(); });
+    add(this.canvas, 'touchend', (e) => {
+        e.preventDefault();
+        clearTimeout(this._radialTimer);
+        clearTimeout(this._radialProgressDelay);
+        this.hideRadialProgress();
+        if (this._radialActive) {
+            this.hideRadialMenu();
+        } else if (e.touches.length === 0) {
+            this.handlePointerUp();
+        }
+    });
+
+    add(this.canvas, 'touchcancel', (e) => {
+        clearTimeout(this._radialTimer);
+        clearTimeout(this._radialProgressDelay);
+        this.hideRadialProgress();
+        if (this._radialActive) this.hideRadialMenu();
+    });
 
     window.addEventListener('wheel', (e) => {
         if (e.target !== this.canvas) return;
