@@ -163,6 +163,69 @@
             </button>
         </div>
 
+        <!-- テキストツール用サブツールバー -->
+        <div id="text-sub-toolbar">
+
+            <!-- フォントサイズ（5段階） -->
+            <button class="sub-btn text-size-btn active" data-size="12" title="極小">
+                <span style="font-size:10px; font-weight:700; color:currentColor;">A</span>
+            </button>
+            <button class="sub-btn text-size-btn" data-size="15" title="小">
+                <span style="font-size:12px; font-weight:700; color:currentColor;">A</span>
+            </button>
+            <button class="sub-btn text-size-btn" data-size="20" title="中">
+                <span style="font-size:15px; font-weight:700; color:currentColor;">A</span>
+            </button>
+            <button class="sub-btn text-size-btn" data-size="28" title="大">
+                <span style="font-size:18px; font-weight:700; color:currentColor;">A</span>
+            </button>
+            <button class="sub-btn text-size-btn" data-size="40" title="極大">
+                <span style="font-size:22px; font-weight:700; color:currentColor;">A</span>
+            </button>
+
+            <div class="sub-divider-h"></div>
+
+            <!-- 文字色（6色 + カスタム） -->
+            <button class="sub-btn text-color-btn active" data-color="#1a1a2e" style="--c:#1a1a2e" title="ダーク"></button>
+            <button class="sub-btn text-color-btn" data-color="#f38ba8" style="--c:#f38ba8" title="赤"></button>
+            <button class="sub-btn text-color-btn" data-color="#40a870" style="--c:#40a870" title="緑"></button>
+            <button class="sub-btn text-color-btn" data-color="#89b4fa" style="--c:#89b4fa" title="青"></button>
+            <button class="sub-btn text-color-btn" data-color="#f9a825" style="--c:#f9a825" title="黄"></button>
+            <button class="sub-btn text-color-btn" data-color="#9e9e9e" style="--c:#9e9e9e" title="グレー"></button>
+            <button class="sub-btn" id="text-custom-color" title="カスタム">
+                <i data-lucide="palette"></i>
+            </button>
+            <input type="color" id="text-color-input" value="#1a1a2e" class="hidden-input">
+
+            <div class="sub-divider-h"></div>
+
+            <!-- 水平揃え -->
+            <button class="sub-btn text-align-btn active" data-align="left" title="左揃え">
+                <i data-lucide="align-left"></i>
+            </button>
+            <button class="sub-btn text-align-btn" data-align="center" title="中央揃え">
+                <i data-lucide="align-center"></i>
+            </button>
+            <button class="sub-btn text-align-btn" data-align="right" title="右揃え">
+                <i data-lucide="align-right"></i>
+            </button>
+
+            <div class="sub-divider-h"></div>
+
+            <!-- 垂直配置 -->
+            <button class="sub-btn text-valign-btn active" data-valign="top" title="上揃え">
+                <i data-lucide="align-start-vertical"></i>
+            </button>
+            <button class="sub-btn text-valign-btn" data-valign="middle" title="中央">
+                <i data-lucide="align-center-vertical"></i>
+            </button>
+            <button class="sub-btn text-valign-btn" data-valign="bottom" title="下揃え">
+                <i data-lucide="align-end-vertical"></i>
+            </button>
+
+        </div>
+
+
         <!-- 直線ツール用サブツールバー -->
         <div id="line-sub-toolbar">
             <!-- 45°スナップ -->

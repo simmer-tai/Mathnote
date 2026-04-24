@@ -3,9 +3,18 @@
  * app.js から分離
  */
 
-MathNote.prototype.createInlineTextBlock = function({ x, y, width, height }, focusOnCreate = true) {
+MathNote.prototype.createInlineTextBlock = function({ x, y, width, height }, focusOnCreate = true, style = {}) {
     const id = Date.now();
-    const block = { id, x, y, width: width || 200, height: height || 80, content: '' };
+    const block = {
+        id, x, y,
+        width: width || 200,
+        height: height || 80,
+        content: '',
+        fontSize: style.fontSize || 15,
+        color: style.color || '#1a1a2e',
+        textAlign: style.textAlign || 'left',
+        verticalAlign: style.verticalAlign || 'top'
+    };
     this.textBlocks.push(block);
     this.createTextBlockElement(block, focusOnCreate);
     if (focusOnCreate) {
@@ -28,10 +37,16 @@ MathNote.prototype.createTextBlockElement = function(b, focusOnCreate = false) {
     const render = document.createElement('div');
     render.className = 'text-render';
     render.style.display = b.content ? 'block' : 'none';
+    render.style.fontSize = (b.fontSize || 15) + 'px';
+    render.style.color = b.color || '#1a1a2e';
+    render.style.textAlign = b.textAlign || 'left';
 
     const ta = document.createElement('textarea');
     ta.className = 'text-inline-editor';
     ta.style.display = b.content ? 'none' : 'block';
+    ta.style.fontSize = (b.fontSize || 15) + 'px';
+    ta.style.color = b.color || '#1a1a2e';
+    ta.style.textAlign = b.textAlign || 'left';
     ta.style.width = '100%';
     ta.style.minHeight = b.height + 'px';
     ta.placeholder = "テキストを入力... (LaTeX: $数式$)";
@@ -41,6 +56,12 @@ MathNote.prototype.createTextBlockElement = function(b, focusOnCreate = false) {
     inner.appendChild(render);
     inner.appendChild(ta);
     div.appendChild(inner);
+
+    inner.style.display = 'flex';
+    inner.style.flexDirection = 'column';
+    const va = b.verticalAlign || 'top';
+    inner.style.justifyContent = va === 'top' ? 'flex-start' : va === 'bottom' ? 'flex-end' : 'center';
+    inner.style.height = '100%';
 
     // イベント設定
     div.onclick = (e) => {
@@ -91,6 +112,9 @@ MathNote.prototype.enterEditMode = function(id) {
     ta.value = b.content;
     ta.style.height = 'auto';
     ta.style.height = ta.scrollHeight + 'px';
+    ta.style.fontSize = (b.fontSize || 15) + 'px';
+    ta.style.color = b.color || '#1a1a2e';
+    ta.style.textAlign = b.textAlign || 'left';
     ta.focus();
     ta.selectionStart = ta.selectionEnd = ta.value.length;
 };
@@ -135,6 +159,20 @@ MathNote.prototype.renderTextBlock = function(b, el) {
     const parts = html.split(regex);
     
     render.innerHTML = '';
+    render.style.fontSize = (b.fontSize || 15) + 'px';
+    render.style.color = b.color || '#1a1a2e';
+    render.style.textAlign = b.textAlign || 'left';
+    const elDiv = document.getElementById(`block-${b.id}`);
+    if (elDiv) {
+        const inner = elDiv.querySelector('.text-block-inner');
+        if (inner) {
+            inner.style.display = 'flex';
+            inner.style.flexDirection = 'column';
+            const va = b.verticalAlign || 'top';
+            inner.style.justifyContent = va === 'top' ? 'flex-start' : va === 'bottom' ? 'flex-end' : 'center';
+            inner.style.height = '100%';
+        }
+    }
     parts.forEach(part => {
         if (part.startsWith('$')) {
             const isDisplay = part.startsWith('$$');

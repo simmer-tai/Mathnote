@@ -62,6 +62,9 @@ MathNote.prototype.handlePointerDown = function(pos, e) {
                         } else if (item.type === 'graph') {
                             const g = this.graphObjects.find(obj => obj.id === item.id);
                             return g ? { ...item, snapshot: { x: g.x, y: g.y, width: g.width, height: g.height } } : item;
+                        } else if (item.type === 'text') {
+                            const b = this.textBlocks.find(obj => obj.id === item.id);
+                            if (b) item.snapshot = { x: b.x, y: b.y, width: b.width || 200, height: b.height || 80 };
                         }
                         return item;
                     });
@@ -359,7 +362,7 @@ MathNote.prototype.handlePointerMove = function(pos, e) {
                     y: this.textStartPos.y,
                     width: w,
                     height: h
-                }, false); // 最初はフォーカスしない
+                }, false, this.textStyle); // 最初はフォーカスしない
             } else {
                 const b = this.textBlocks.find(block => block.id === this.previewTextBlockId);
                 if (b) {
@@ -434,6 +437,23 @@ MathNote.prototype.handlePointerMove = function(pos, e) {
                     g.y = y + ((snap.y - oldBounds.y) / oldBounds.height) * height;
                     g.width = (snap.width / oldBounds.width) * width;
                     g.height = (snap.height / oldBounds.height) * height;
+                }
+            } else if (item.type === 'text') {
+                const b = this.textBlocks.find(obj => obj.id === item.id);
+                if (b && item.snapshot) {
+                    const snap = item.snapshot;
+                    b.x = x + ((snap.x - oldBounds.x) / oldBounds.width) * width;
+                    b.y = y + ((snap.y - oldBounds.y) / oldBounds.height) * height;
+                    b.width = Math.max(80, (snap.width / oldBounds.width) * width);
+                    b.height = Math.max(32, (snap.height / oldBounds.height) * height);
+
+                    // DOM 要素にも反映
+                    const el = document.getElementById(`block-${b.id}`);
+                    if (el) {
+                        el.style.width = b.width + 'px';
+                        const ta = el.querySelector('.text-inline-editor');
+                        if (ta) ta.style.minHeight = b.height + 'px';
+                    }
                 }
             }
         }
@@ -518,7 +538,24 @@ MathNote.prototype.handlePointerMove = function(pos, e) {
             noFill: this.shape.noFill
         };
         this.draw();
-    } else if (this.tool === 'pen') this.currentPath.points.push(pos);
+    } else if (this.tool === 'pen') {
+        // getCoalescedEvents で間引かれた中間点もすべて収集する
+        const events = (e && typeof e.getCoalescedEvents === 'function')
+            ? e.getCoalescedEvents()
+            : [e];
+        const rect = this.canvas.getBoundingClientRect();
+        for (const ce of events) {
+            const clientX = ce.touches ? ce.touches[0].clientX : ce.clientX;
+            const clientY = ce.touches ? ce.touches[0].clientY : ce.clientY;
+            const sx = clientX - rect.left;
+            const sy = clientY - rect.top;
+            const cp = {
+                x: (sx - this.view.offsetX) / this.view.scale,
+                y: (sy - this.view.offsetY) / this.view.scale
+            };
+            this.currentPath.points.push(cp);
+        }
+    }
     else if (this.tool === 'eraser') this.eraseAt(pos);
     else return;
     this.draw();
@@ -602,7 +639,7 @@ MathNote.prototype.handlePointerUp = function() {
                 y: this.textStartPos.y,
                 width: 200,
                 height: 80
-            }, true);
+            }, true, this.textStyle);
         }
         this.textStartPos = null;
     }
@@ -666,29 +703,16 @@ MathNote.prototype.setupEventListeners = function() {
     add(this.canvas, 'touchstart', (e) => {
         e.preventDefault();
         if (e.touches.length === 1) {
-            const touch = e.touches[0];
             const pos = this.getPointerPos(e, this.canvas);
-            
-            // ラジアルメニュー長押しタイマー (描画中でない場合のみ)
-            if (!this.isDrawing) {
-                this._radialStartPos = { x: touch.clientX, y: touch.clientY };
-                clearTimeout(this._radialTimer);
-                clearTimeout(this._radialProgressDelay);
-                this._radialProgressDelay = setTimeout(() => {
-                    this.showRadialProgress(touch.clientX, touch.clientY);
-                }, 300);
-                this._radialTimer = setTimeout(() => {
-                    this.hideRadialProgress();
-                    this.showRadialMenu(touch.clientX, touch.clientY);
-                }, 500);
-            }
-
             this.handlePointerDown(pos, e);
             const now = Date.now(); if (now - this.lastTapTime < 300) { this.onDoubleTap(pos); } this.lastTapTime = now;
         } else if (e.touches.length === 2) {
-            clearTimeout(this._radialTimer);
-            clearTimeout(this._radialProgressDelay);
-            this.hideRadialProgress();
+            // 2本指タップ検出用
+            this._twoFingerTapStart = {
+                time: Date.now(),
+                x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+            };
             this.isDrawing = false; this.isPanning = false;
             this.lastPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             this.lastPinchCenter = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2, y: (e.touches[0].clientY + e.touches[1].clientY) / 2 };
@@ -733,41 +757,35 @@ MathNote.prototype.setupEventListeners = function() {
                 }
                 this.updateRadialHighlight();
             } else {
-                // 通常操作時、一定以上の移動があれば長押しをキャンセル
-                if (this._radialStartPos) {
-                    const dist = Math.hypot(touch.clientX - this._radialStartPos.x, touch.clientY - this._radialStartPos.y);
-                    if (dist > 10) {
-                        clearTimeout(this._radialTimer);
-                        clearTimeout(this._radialProgressDelay);
-                        this.hideRadialProgress();
-                    }
-                }
                 this.handlePointerMove(this.getPointerPos(e, this.canvas), e);
             }
         } else if (e.touches.length === 2) {
-            clearTimeout(this._radialTimer);
-            clearTimeout(this._radialProgressDelay);
-            this.hideRadialProgress();
+            // 指が動いたらタップ判定をキャンセル
+            this._twoFingerTapStart = null;
             this.handlePinch(e.touches, this.canvas);
         }
     });
     
     add(this.canvas, 'touchend', (e) => {
         e.preventDefault();
-        clearTimeout(this._radialTimer);
-        clearTimeout(this._radialProgressDelay);
-        this.hideRadialProgress();
         if (this._radialActive) {
             this.hideRadialMenu();
         } else if (e.touches.length === 0) {
+            // 2本指タップ判定
+            if (this._twoFingerTapStart) {
+                const elapsed = Date.now() - this._twoFingerTapStart.time;
+                if (elapsed < 220) {
+                    // タップとして認識 → ラジアルメニューを表示
+                    this.showRadialMenu(this._twoFingerTapStart.x, this._twoFingerTapStart.y);
+                }
+                this._twoFingerTapStart = null;
+            }
             this.handlePointerUp();
         }
     });
 
     add(this.canvas, 'touchcancel', (e) => {
-        clearTimeout(this._radialTimer);
-        clearTimeout(this._radialProgressDelay);
-        this.hideRadialProgress();
+        this._twoFingerTapStart = null;
         if (this._radialActive) this.hideRadialMenu();
     });
 
@@ -1014,11 +1032,61 @@ MathNote.prototype.setupEventListeners = function() {
         this.snapEnabled = !this.snapEnabled;
         document.getElementById('tool-snap').classList.toggle('active', this.snapEnabled);
     });
+
+    // ===== テキストサブツールバー =====
+
+    // フォントサイズボタン
+    document.querySelectorAll('.text-size-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.text-size-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            this.textStyle.fontSize = parseInt(btn.dataset.size);
+        });
+    });
+
+    // 文字色ボタン
+    document.querySelectorAll('.text-color-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.text-color-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            this.textStyle.color = btn.dataset.color;
+            document.getElementById('text-color-input').value = btn.dataset.color;
+        });
+    });
+
+    // カスタム文字色
+    const textCustomColorBtn = document.getElementById('text-custom-color');
+    const textColorInput = document.getElementById('text-color-input');
+    if (textCustomColorBtn && textColorInput) {
+        textCustomColorBtn.addEventListener('click', () => textColorInput.click());
+        textColorInput.addEventListener('input', (e) => {
+            this.textStyle.color = e.target.value;
+            document.querySelectorAll('.text-color-btn').forEach(b => b.classList.remove('active'));
+        });
+    }
+
+    // 水平揃えボタン
+    document.querySelectorAll('.text-align-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.text-align-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            this.textStyle.textAlign = btn.dataset.align;
+        });
+    });
+
+    // 垂直配置ボタン
+    document.querySelectorAll('.text-valign-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.text-valign-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            this.textStyle.verticalAlign = btn.dataset.valign;
+        });
+    });
 };
 
 MathNote.prototype.setupSubTooltip = function() {
     const tooltip = document.getElementById('sub-tooltip');
-    document.querySelectorAll('#sub-toolbar .sub-btn, #sub-toolbar .pen-color-btn, #shape-sub-toolbar .sub-btn, #shape-sub-toolbar .shape-color-btn').forEach(btn => {
+    document.querySelectorAll('#sub-toolbar .sub-btn, #sub-toolbar .pen-color-btn, #shape-sub-toolbar .sub-btn, #shape-sub-toolbar .shape-color-btn, #text-sub-toolbar .sub-btn, #text-sub-toolbar .text-color-btn').forEach(btn => {
         btn.addEventListener('mouseenter', (e) => {
             const title = btn.getAttribute('title');
             if (!title) return;

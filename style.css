@@ -1278,3 +1278,48 @@ canvas {
     stroke-dashoffset: 226;
     transition: stroke-dashoffset 0.05s linear;
 }
+
+/* ===== テキストツール用サブツールバー ===== */
+#text-sub-toolbar {
+    position: fixed;
+    top: 0;
+    left: 56px;
+    width: 0;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg-dark);
+    z-index: 150;
+    transition: width 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+    box-sizing: border-box;
+}
+
+#text-sub-toolbar.visible {
+    width: 56px;
+}
+
+/* テキスト用カラーボタン */
+.text-color-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    background-color: var(--c);
+    cursor: pointer;
+    transition: border-color 0.15s;
+    flex-shrink: 0;
+}
+
+.text-color-btn.active {
+    border-color: #fff;
+    box-shadow: 0 0 0 1px var(--primary-color);
+}
+
+.text-color-btn:hover {
+    border-color: rgba(255,255,255,0.6);
+}
+

@@ -31,6 +31,12 @@ class MathNote {
         this.dragLineStartSnapshot = null;
         this.pen = { color: '#2b2b2b', size: 3, style: 'solid' };
         this.shape = { type: 'rect', fillColor: '#ffffff', strokeColor: '#2b2b2b', lineWidth: 2, noFill: true };
+        this.textStyle = {
+            fontSize: 15,
+            color: '#1a1a2e',
+            textAlign: 'left',
+            verticalAlign: 'top'
+        };
         this.paths = []; this.textBlocks = []; this.graphObjects = []; this.shapeObjects = []; 
         
         // インタラクション状態
@@ -72,6 +78,7 @@ class MathNote {
         this._radialProgressValue = 0;
         this._radialProgressDelay = null;
         this._radialJustSwitched = false;
+        this._twoFingerTapStart = null;
 
         this.init();
     }
@@ -187,7 +194,12 @@ class MathNote {
                 };
             } else if (item.type === 'text') {
                 const b = this.textBlocks.find(obj => obj.id === item.id);
-                if (b) bounds = { x: b.x, y: b.y, width: b.width, height: b.height };
+                if (b) {
+                    const el = document.getElementById(`block-${b.id}`);
+                    const w = b.width || (el ? el.offsetWidth : 200);
+                    const h = b.height || (el ? el.offsetHeight : 80);
+                    bounds = { x: b.x, y: b.y, width: w, height: h };
+                }
             }
             
             
@@ -263,6 +275,14 @@ class MathNote {
             } else if (item.type === 'graph') {
                 const g = this.graphObjects.find(obj => obj.id === item.id);
                 if (g) bounds = { x: g.x, y: g.y, width: g.width, height: g.height };
+            } else if (item.type === 'text') {
+                const b = this.textBlocks.find(obj => obj.id === item.id);
+                if (b) {
+                    const el = document.getElementById(`block-${b.id}`);
+                    const w = b.width || (el ? el.offsetWidth : 200);
+                    const h = b.height || (el ? el.offsetHeight : 80);
+                    bounds = { x: b.x, y: b.y, width: w, height: h };
+                }
             }
 
             if (bounds) {
@@ -449,12 +469,15 @@ class MathNote {
         const isPen = this.tool === 'pen';
         const isShape = this.tool === 'shape';
         const isLine = this.tool === 'line';
+        const isText = this.tool === 'text';
         const lineSubToolbar = document.getElementById('line-sub-toolbar');
+        const textSubToolbar = document.getElementById('text-sub-toolbar');
 
         if (subToolbar) subToolbar.classList.toggle('visible', isPen);
         if (shapeSubToolbar) shapeSubToolbar.classList.toggle('visible', isShape);
         if (lineSubToolbar) lineSubToolbar.classList.toggle('visible', isLine);
-        if (canvasContainer) canvasContainer.classList.toggle('sub-open', isPen || isShape || isLine);
+        if (textSubToolbar) textSubToolbar.classList.toggle('visible', isText);
+        if (canvasContainer) canvasContainer.classList.toggle('sub-open', isPen || isShape || isLine || isText);
 
         const selectProps = document.getElementById('select-properties');
         if (selectProps) {

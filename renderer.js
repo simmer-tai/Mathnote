@@ -188,18 +188,23 @@ MathNote.prototype.drawPath = function(ctx, path) {
     else ctx.setLineDash([]);
 
     ctx.moveTo(pts[0].x, pts[0].y);
-    
+
     if (pts.length === 2) {
         ctx.lineTo(pts[1].x, pts[1].y);
     } else {
-        // 三点以上ある場合は中点との間を二次ベジェ曲線でつなぐ（Smoothing）
+        // 最初の区間: pts[0] → pts[1] の中点まで直線（スムージング開始）
+        const mx0 = (pts[0].x + pts[1].x) / 2;
+        const my0 = (pts[0].y + pts[1].y) / 2;
+        ctx.lineTo(mx0, my0);
+
+        // 中間区間: 各点を制御点に、隣り合う中点を結ぶ quadraticCurveTo
         for (let i = 1; i < pts.length - 1; i++) {
             const mx = (pts[i].x + pts[i + 1].x) / 2;
             const my = (pts[i].y + pts[i + 1].y) / 2;
-            // pts[i] を制御点、中点 mx, my を終点とする
             ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
         }
-        // 最後の点へ直線でつなぐ
+
+        // 最後の区間: 最後の中点 → pts[last] まで直線（対称的に終端）
         ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
     }
     

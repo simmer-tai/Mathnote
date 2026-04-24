@@ -131,6 +131,14 @@ if (typeof MathNote !== 'undefined') {
         this.shapeObjects = this.note.shapeObjects || [];
         this.lineObjects = this.note.lineObjects || [];
 
+        // マイグレーション: 旧データに新プロパティのデフォルト値を補完
+        for (const b of this.textBlocks) {
+            if (b.fontSize === undefined) b.fontSize = 15;
+            if (b.color === undefined) b.color = '#1a1a2e';
+            if (b.textAlign === undefined) b.textAlign = 'left';
+            if (b.verticalAlign === undefined) b.verticalAlign = 'top';
+        }
+
         // UI同期
         const display = document.getElementById('board-title-display');
         const input = document.getElementById('board-title-input');
